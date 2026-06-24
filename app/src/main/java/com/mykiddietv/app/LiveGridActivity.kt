@@ -300,7 +300,7 @@ class LiveGridActivity : AppCompatActivity() {
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
         val items = if (kidMode)
-            arrayOf("🔄   Refresh", "ℹ️   About", "✖   Exit")
+            arrayOf("🔄   Refresh", "ℹ️   About")
         else
             arrayOf("🔄   Refresh", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = androidx.appcompat.app.AlertDialog.Builder(this)

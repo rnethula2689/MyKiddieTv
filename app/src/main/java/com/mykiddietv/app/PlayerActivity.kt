@@ -34,6 +34,7 @@ class PlayerActivity : AppCompatActivity() {
     // We start hardware-first for efficiency, then on a playback error rebuild the player
     // forcing FFmpeg software decoders for both audio and video.
     private var forceSoftware = false
+    private var screenLock: ScreenLock? = null
 
     companion object {
         var liveChannels: List<Portal.Channel> = emptyList()
@@ -78,6 +79,8 @@ class PlayerActivity : AppCompatActivity() {
 
         b.playerView.controllerShowTimeoutMs = 6000
         b.playerView.requestFocus()
+        KidGuard.immersive(this)
+        screenLock = ScreenLock(this)
     }
 
     private fun buildPlayer(): ExoPlayer {
@@ -164,7 +167,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
         val items = if (kidMode)
-            arrayOf("💬   Subtitles", "ℹ️   About", "✖   Exit")
+            arrayOf("💬   Subtitles", "ℹ️   About")
         else
             arrayOf("💬   Subtitles", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
@@ -191,6 +194,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Menu key opens the overlay menu; any other key (except Back/volume) re-shows the controls. */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (screenLock?.locked == true) return true // swallow everything while screen-locked
         val kc = event.keyCode
         if (kc == android.view.KeyEvent.KEYCODE_MENU) {
             if (event.action == android.view.KeyEvent.ACTION_UP) showMenu()
@@ -268,6 +272,11 @@ class PlayerActivity : AppCompatActivity() {
                 Toast.makeText(this, "Subtitle applied ✓", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    override fun onBackPressed() {
+        if (screenLock?.locked == true) return // can't leave while screen-locked
+        super.onBackPressed()
     }
 
     override fun onStop() {

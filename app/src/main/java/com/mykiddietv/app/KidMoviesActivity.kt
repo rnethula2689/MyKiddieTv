@@ -32,6 +32,11 @@ class KidMoviesActivity : AppCompatActivity() {
         showHome()
     }
 
+    override fun onResume() {
+        super.onResume()
+        KidGuard.immersive(this)
+    }
+
     private fun connectPortal() {
         val acct = Configs.active(this) ?: return
         Portal.portalUrl = acct.portal

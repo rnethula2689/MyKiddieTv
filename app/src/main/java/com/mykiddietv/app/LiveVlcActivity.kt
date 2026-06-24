@@ -31,6 +31,7 @@ class LiveVlcActivity : AppCompatActivity() {
     private var channels: List<Portal.Channel> = emptyList()
     private var chIndex = -1
     private var titleText = ""
+    private var screenLock: ScreenLock? = null
     private var hideBarRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +70,8 @@ class LiveVlcActivity : AppCompatActivity() {
 
         play(url)
         showBar()
+        KidGuard.immersive(this)
+        screenLock = ScreenLock(this)
     }
 
     private fun play(url: String) {
@@ -124,7 +127,7 @@ class LiveVlcActivity : AppCompatActivity() {
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
         val items = if (kidMode)
-            arrayOf("ℹ️   About", "✖   Exit")
+            arrayOf("ℹ️   About")
         else
             arrayOf("⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
@@ -144,6 +147,7 @@ class LiveVlcActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (screenLock?.locked == true) return true // swallow everything while screen-locked
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_MENU -> { showMenu(); return true }
@@ -153,6 +157,11 @@ class LiveVlcActivity : AppCompatActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun onBackPressed() {
+        if (screenLock?.locked == true) return // can't leave while screen-locked
+        super.onBackPressed()
     }
 
     override fun onStop() {

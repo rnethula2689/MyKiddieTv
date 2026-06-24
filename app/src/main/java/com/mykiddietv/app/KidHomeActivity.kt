@@ -30,6 +30,21 @@ class KidHomeActivity : AppCompatActivity() {
         connectPortal()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Lock the kid in: hide system bars and pin the app (Home/Recents disabled while pinned).
+        KidGuard.immersive(this)
+        KidGuard.startLock(this)
+    }
+
+    /** Back from the kid home is the only way out of the kid area — and it needs the passcode. */
+    override fun onBackPressed() {
+        KidGuard.promptPasscode(this, "Enter passcode to exit Kids") {
+            KidGuard.stopLock(this)
+            finish() // returns to the profile picker
+        }
+    }
+
     /** The kid screen can be the first thing launched, so make sure the portal is connected. */
     private fun connectPortal() {
         val acct = Configs.active(this)
