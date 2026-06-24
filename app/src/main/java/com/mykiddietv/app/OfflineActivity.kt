@@ -62,16 +62,16 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
         entries = if (kidMode) all.filter { it.item.status == Downloads.DONE } else all
     }
 
-    private fun toEntry(it: Downloads.Item): Entry {
-        val sp = it.source.split("|")
+    private fun toEntry(item: Downloads.Item): Entry {
+        val sp = item.source.split("|")
         if (sp.getOrNull(0) == "ep") {
-            val tp = it.title.split(SEP)
+            val tp = item.title.split(SEP)
             val series = tp.getOrNull(0)?.ifBlank { null } ?: "Series"
             val season = tp.getOrNull(1)?.ifBlank { null } ?: "Season"
-            val episode = if (tp.size >= 3) tp.subList(2, tp.size).joinToString(SEP) else it.title
-            return Entry(it, true, sp.getOrElse(1) { it.id }, series, season, episode, "")
+            val episode = if (tp.size >= 3) tp.subList(2, tp.size).joinToString(SEP) else item.title
+            return Entry(item, true, sp.getOrElse(1) { item.id }, series, season, episode, "")
         }
-        return Entry(it, false, "", "", "", "", it.title)
+        return Entry(item, false, "", "", "", "", item.title)
     }
 
     // ---- rendering ----
