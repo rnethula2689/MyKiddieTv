@@ -286,7 +286,11 @@ class KidContentActivity : AppCompatActivity() {
         val nVod = Profiles.allowedVod(this).count { !it.isSeries } + Profiles.allowedEpisodes(this).size
         push(Page("Approved Content", listOf(
             KidNode("📺   Approved Live TV Channels  ($nCh)", null, "", open = { showApprovedChannels() }),
-            KidNode("🎬   Approved Movies & Shows  ($nVod)", null, "", open = { showApprovedVod() })
+            KidNode("🎬   Approved Movies & Shows  ($nVod)", null, "", open = { showApprovedVod() }),
+            KidNode("⬇   Downloads (offline)", null, "", open = {
+                OfflineActivity.kidMode = false
+                startActivity(android.content.Intent(this, OfflineActivity::class.java))
+            })
         ), Kind.FOLDERS))
     }
 
@@ -444,7 +448,7 @@ class KidContentActivity : AppCompatActivity() {
     private fun episodeNode(series: Portal.VodItem, season: Portal.Season, e: Portal.Episode): KidNode {
         val ep = Profiles.KidEpisode(
             seriesId = series.id, seriesName = series.name,
-            seasonId = season.id, episodeId = e.id,
+            seasonId = season.id, seasonName = season.name, episodeId = e.id,
             name = e.name, poster = series.posterUrl
         )
         return KidNode("🎬  ${e.name}", series.posterUrl, e.name, episode = ep,

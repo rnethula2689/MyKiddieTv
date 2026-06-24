@@ -111,10 +111,12 @@ object Profiles {
     /** Enough to display and later resolve a play URL via Portal.playEpisodeUrl(series, season, episode). */
     data class KidEpisode(
         val seriesId: String, val seriesName: String,
-        val seasonId: String, val episodeId: String,
+        val seasonId: String, val seasonName: String, val episodeId: String,
         val name: String, val poster: String
     ) {
         val key get() = "$seriesId|$seasonId|$episodeId"
+        /** Download descriptor understood by Downloads.resolveSource. */
+        val source get() = "ep|$seriesId|$seasonId|$episodeId"
     }
 
     fun allowedEpisodes(ctx: Context): MutableList<KidEpisode> {
@@ -125,7 +127,7 @@ object Profiles {
                 val o = arr.getJSONObject(i)
                 out.add(KidEpisode(
                     o.optString("seriesId"), o.optString("seriesName"),
-                    o.optString("seasonId"), o.optString("episodeId"),
+                    o.optString("seasonId"), o.optString("seasonName"), o.optString("episodeId"),
                     o.optString("name"), o.optString("poster")
                 ))
             }
@@ -140,7 +142,7 @@ object Profiles {
         for (e in list) {
             arr.put(JSONObject()
                 .put("seriesId", e.seriesId).put("seriesName", e.seriesName)
-                .put("seasonId", e.seasonId).put("episodeId", e.episodeId)
+                .put("seasonId", e.seasonId).put("seasonName", e.seasonName).put("episodeId", e.episodeId)
                 .put("name", e.name).put("poster", e.poster))
         }
         prefs(ctx).edit().putString("episodes", arr.toString()).apply()

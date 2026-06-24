@@ -44,6 +44,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".OfflineActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ChannelsActivity"
             android:exported="false" />
 

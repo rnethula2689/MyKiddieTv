@@ -54,22 +54,26 @@ class KidMoviesActivity : AppCompatActivity() {
         val movies = Profiles.allowedVod(this).filter { !it.isSeries }
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
 
-        val rows = ArrayList<ChannelsActivity.Row>()
+        val content = ArrayList<ChannelsActivity.Row>()
         movies.forEach { v ->
-            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { playMovie(v) })
+            content.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { playMovie(v) })
         }
         bySeries.forEach { (sid, eps) ->
             val name = eps.first().seriesName
-            rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
+            content.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
         }
-        rows.sortBy { it.sortKey.lowercase() }
+        content.sortBy { it.sortKey.lowercase() }
 
-        if (rows.isEmpty()) {
-            b.status.visibility = View.VISIBLE
-            b.status.text = "Nothing here yet. Ask a grown-up to add movies or shows."
-        } else {
-            b.status.visibility = View.GONE
-        }
+        val rows = ArrayList<ChannelsActivity.Row>()
+        // Always-present offline folder (works with no network).
+        rows.add(ChannelsActivity.Row("⬇  Downloaded (offline)", null, "") {
+            OfflineActivity.kidMode = true
+            startActivity(Intent(this, OfflineActivity::class.java))
+        })
+        rows.addAll(content)
+
+        b.status.visibility = if (content.isEmpty()) View.VISIBLE else View.GONE
+        if (content.isEmpty()) b.status.text = "No streaming movies/shows yet — open Downloaded for offline ones."
         adapter.submit(rows)
     }
 
