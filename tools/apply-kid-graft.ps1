@@ -421,5 +421,12 @@ Repl "$J\PlayerActivity.kt" @'
     }
 '@ "Player onBackPressed lock guard"
 
+"== Updater: read version file from the release asset (CI writes it per build) =="
+Repl "$J\Updater.kt" @'
+        "https://raw.githubusercontent.com/rnethula2689/MyKiddieTv/main/latest_version.json"
+'@ @'
+        "https://github.com/rnethula2689/MyKiddieTv/releases/download/apk-latest/latest_version.json"
+'@ "Updater version URL -> release asset"
+
 if ($fail -gt 0) { "`nGRAFT INCOMPLETE: $fail anchor(s) missing — upstream changed; fix manually." }
 else { "`nGRAFT OK" }

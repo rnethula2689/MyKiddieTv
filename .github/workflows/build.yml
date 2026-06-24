@@ -29,10 +29,13 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Stamp unique build number (so each APK is distinguishable & installable over the last)
+      - name: Stamp unique build number + version file (distinguishable, installable over the last, update-aware)
         run: |
           sed -i "s/versionCode = 1$/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
+          sed -i "s/versionName = \"1.0\"/versionName = \"1.0.${{ github.run_number }}\"/" app/build.gradle.kts
+          echo "{\"versionCode\": ${{ github.run_number }}, \"versionName\": \"1.0.${{ github.run_number }}\"}" > latest_version.json
           grep -E "versionCode|versionName" app/build.gradle.kts
+          cat latest_version.json
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
@@ -43,9 +46,11 @@ jobs:
           name: mykiddietv-apk
           path: app/build/outputs/apk/debug/*.apk
 
-      - name: Publish APK to a release (for easy Fire tablet download)
+      - name: Publish APK + version file to a release (for download & update checks)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: apk-latest
           name: Latest APK
-          files: app/build/outputs/apk/debug/*.apk
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            latest_version.json

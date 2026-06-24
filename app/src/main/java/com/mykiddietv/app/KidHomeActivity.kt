@@ -37,11 +37,15 @@ class KidHomeActivity : AppCompatActivity() {
         KidGuard.startLock(this)
     }
 
-    /** Back from the kid home is the only way out of the kid area — and it needs the passcode. */
+    /** Back from the kid home returns to the profile picker (passcode-gated if one is set) —
+     *  never exits the app. We navigate to ProfileActivity explicitly so it works regardless
+     *  of the back-stack state under screen-pinning. */
     override fun onBackPressed() {
         KidGuard.promptPasscode(this, "Enter passcode to exit Kids") {
             KidGuard.stopLock(this)
-            finish() // returns to the profile picker
+            startActivity(Intent(this, ProfileActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            finish()
         }
     }
 
