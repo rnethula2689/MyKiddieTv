@@ -15,14 +15,17 @@ class ChannelsActivity : AppCompatActivity() {
     private lateinit var b: ActivityChannelsBinding
     private val adapter = RowAdapter()
 
-    data class Row(val label: String, val iconUrl: String?, val sortKey: String = "", val action: () -> Unit)
+    /** Optional favourite toggle for a row (channels / movies). Null = not favouritable (e.g. folders). */
+    class FavInfo(val isFav: () -> Boolean, val toggle: () -> Boolean)
+    data class Row(val label: String, val iconUrl: String?, val sortKey: String = "", val fav: FavInfo? = null, val action: () -> Unit)
     enum class SearchKind { LOCAL, GLOBAL, CHANNELS, VOD_ALL, VOD_CATEGORY }
     data class Page(
         val title: String,
         val rows: List<Row>,
         val kind: SearchKind = SearchKind.LOCAL,
         val scopeId: String? = null,
-        val scopeChannels: List<Portal.Channel>? = null
+        val scopeChannels: List<Portal.Channel>? = null,
+        val rebuild: (() -> Unit)? = null // pull-to-refresh / return rebuilds this screen in place
     )
 
     private val backStack = ArrayDeque<Page>()
@@ -42,6 +45,11 @@ class ChannelsActivity : AppCompatActivity() {
         setContentView(b.root)
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
+        b.swipe.setOnRefreshListener {
+            val r = backStack.lastOrNull()?.rebuild
+            if (r != null) { backStack.removeLast(); r() }
+            b.swipe.isRefreshing = false
+        }
 
         b.search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString() ?: "")
@@ -259,7 +267,11 @@ class ChannelsActivity : AppCompatActivity() {
         if (Configs.dirty) {
             Configs.dirty = false
             connectAndLoad()
+            return
         }
+        // Returning from the live grid → refresh the Live TV page so the Favourites count is current.
+        val top = backStack.lastOrNull()
+        if (top?.title == "Live TV" && top.rebuild != null) { backStack.removeLast(); top.rebuild!!.invoke() }
     }
 
     private var progressAnim: android.animation.ObjectAnimator? = null
@@ -429,7 +441,8 @@ class ChannelsActivity : AppCompatActivity() {
 
     private fun channelRow(ch: Portal.Channel): Row {
         val label = "📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name
-        return Row(label, ch.logoUrl, sortKey = ch.name) { playChannel(ch) }
+        val fav = FavInfo({ Configs.isFavorite(this, ch.id) }, { Configs.toggleFavorite(this, ch.id) })
+        return Row(label, ch.logoUrl, sortKey = ch.name, fav = fav) { playChannel(ch) }
     }
 
     /** Channels always open in the live (VLC) player — same as the Live TV grid, no seek controls. */
@@ -463,7 +476,12 @@ class ChannelsActivity : AppCompatActivity() {
 
     private fun vodItemRow(v: Portal.VodItem): Row {
         val label = (if (v.isSeries) "📁  " else "🎬  ") + v.name
-        return Row(label, v.posterUrl, sortKey = v.name) {
+        // Movies are favouritable here; series/episode favourites come with the nested folder.
+        val fav = if (v.isSeries) null else FavInfo(
+            { Favorites.isFav(this, "movie", v.id) },
+            { Favorites.toggle(this, Favorites.Entry("movie", v.id, v.name, v.posterUrl, "vod|${v.id}|${v.cmd}")) }
+        )
+        return Row(label, v.posterUrl, sortKey = v.name, fav = fav) {
             if (v.isSeries) showSeasons(v)
             else mediaActions(v.name, v.posterUrl, "movie_${v.id}", "vod|${v.id}|${v.cmd}")
         }
@@ -566,18 +584,19 @@ class ChannelsActivity : AppCompatActivity() {
                     Row("🎬   Movies (VOD)", null) { showVodCategories() },
                     Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
                 ),
-                kind = SearchKind.GLOBAL
+                kind = SearchKind.GLOBAL,
+                rebuild = { showHome() }
             )
         )
     }
 
     private fun showLiveGenres() {
         val rows = ArrayList<Row>()
-        rows.add(Row("All Channels  (${allChannels.size})", null, sortKey = "All Channels") { openLiveGrid(allChannels, "All Channels") })
         val favs = Configs.favorites(this)
         val favChannels = allChannels.filter { favs.contains(it.id) }
         if (favChannels.isNotEmpty())
             rows.add(Row("⭐  Favourites  (${favChannels.size})", null, sortKey = "Favourites") { openLiveGrid(favChannels, "Favourites") })
+        rows.add(Row("All Channels  (${allChannels.size})", null, sortKey = "All Channels") { openLiveGrid(allChannels, "All Channels") })
         for (g in genres) {
             val list = byGenre[g.id] ?: emptyList()
             // Censored (adult/restricted) genres aren't returned by get_all_channels, so they look
@@ -586,7 +605,7 @@ class ChannelsActivity : AppCompatActivity() {
             val label = (if (g.censored) "🔒  " else "") + g.title + (if (list.isNotEmpty()) "  (${list.size})" else "")
             rows.add(Row(label, null, sortKey = g.title) { openGenre(g) })
         }
-        push(Page("Live TV", rows, kind = SearchKind.CHANNELS, scopeChannels = allChannels))
+        push(Page("Live TV", rows, kind = SearchKind.CHANNELS, scopeChannels = allChannels, rebuild = { showLiveGenres() }))
     }
 
     private var parentalUnlocked = false

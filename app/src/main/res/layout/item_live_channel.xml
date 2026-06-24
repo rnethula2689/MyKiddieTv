@@ -36,6 +36,5 @@
         android:paddingVertical="6dp"
         android:focusable="true"
         android:clickable="true"
-        android:visibility="gone"
         android:background="@drawable/item_bg" />
 </LinearLayout>

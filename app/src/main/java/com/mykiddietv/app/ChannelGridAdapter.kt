@@ -5,7 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import com.mykiddietv.app.databinding.ItemChannelBinding
+import com.mykiddietv.app.databinding.ItemLiveChannelBinding
 
 /**
  * Channel list for the Live TV preview screen.
@@ -15,7 +15,8 @@ import com.mykiddietv.app.databinding.ItemChannelBinding
 class ChannelGridAdapter(
     private var items: List<Portal.Channel>,
     private val onActivate: (Portal.Channel) -> Unit,
-    private val onFocus: (Portal.Channel) -> Unit = {}
+    private val onFocus: (Portal.Channel) -> Unit = {},
+    private val onToggleFav: (Portal.Channel) -> Unit = {}
 ) : RecyclerView.Adapter<ChannelGridAdapter.VH>() {
 
     fun submit(list: List<Portal.Channel>) {
@@ -23,15 +24,23 @@ class ChannelGridAdapter(
         notifyDataSetChanged()
     }
 
-    class VH(val b: ItemChannelBinding) : RecyclerView.ViewHolder(b.root)
+    class VH(val b: ItemLiveChannelBinding) : RecyclerView.ViewHolder(b.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
-        VH(ItemChannelBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+        VH(ItemLiveChannelBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val ch = items[position]
-        val star = if (Configs.isFavorite(holder.b.root.context, ch.id)) "★  " else ""
-        holder.b.name.text = star + (if (ch.number.isNotEmpty()) "${ch.number}.  ${ch.name}" else ch.name)
+        holder.b.name.text = if (ch.number.isNotEmpty()) "${ch.number}.  ${ch.name}" else ch.name
+        val fav = Configs.isFavorite(holder.b.root.context, ch.id)
+        holder.b.star.text = if (fav) "★" else "☆"
+        holder.b.star.setTextColor(if (fav) 0xFFFFD54F.toInt() else 0xFF5A6675.toInt())
+        holder.b.star.setOnClickListener {
+            Configs.toggleFavorite(holder.b.root.context, ch.id)
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION) notifyItemChanged(pos) // refresh just this star
+            onToggleFav(ch)
+        }
         if (ch.logoUrl.isEmpty()) {
             holder.b.thumb.visibility = View.GONE
             holder.b.thumb.setImageDrawable(null)
