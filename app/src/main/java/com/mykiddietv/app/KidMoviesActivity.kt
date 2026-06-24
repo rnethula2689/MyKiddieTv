@@ -19,6 +19,7 @@ class KidMoviesActivity : AppCompatActivity() {
     private lateinit var b: ActivityKidmoviesBinding
     private val adapter = RowAdapter()
     private var connected = false
+    private var inStreaming = false        // in the "Live Movies & Shows" list (or deeper)
     private var inSeries: String? = null   // non-null = viewing a series' episodes
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,38 +50,44 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     private fun showHome() {
-        inSeries = null
+        inStreaming = false; inSeries = null
         b.title.text = "Movies & Shows"
+        b.status.visibility = View.GONE
+        adapter.submit(listOf(
+            ChannelsActivity.Row("📺  Live Movies & Shows", null, "") { showStreaming() },
+            ChannelsActivity.Row("⬇  Downloaded Movies & Shows", null, "") {
+                OfflineActivity.kidMode = true
+                startActivity(Intent(this, OfflineActivity::class.java))
+            }
+        ))
+        b.list.scrollToPosition(0)
+    }
+
+    /** Approved content streamed online (needs internet). */
+    private fun showStreaming() {
+        inStreaming = true; inSeries = null
+        b.title.text = "Live Movies & Shows"
         val movies = Profiles.allowedVod(this).filter { !it.isSeries }
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
-
-        val content = ArrayList<ChannelsActivity.Row>()
+        val rows = ArrayList<ChannelsActivity.Row>()
         movies.forEach { v ->
-            content.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { playMovie(v) })
+            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { playMovie(v) })
         }
         bySeries.forEach { (sid, eps) ->
             val name = eps.first().seriesName
-            content.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
+            rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
         }
-        content.sortBy { it.sortKey.lowercase() }
-
-        val rows = ArrayList<ChannelsActivity.Row>()
-        // Always-present offline folder (works with no network).
-        rows.add(ChannelsActivity.Row("⬇  Downloaded (offline)", null, "") {
-            OfflineActivity.kidMode = true
-            startActivity(Intent(this, OfflineActivity::class.java))
-        })
-        rows.addAll(content)
-
-        b.status.visibility = if (content.isEmpty()) View.VISIBLE else View.GONE
-        if (content.isEmpty()) b.status.text = "No streaming movies/shows yet — open Downloaded for offline ones."
+        rows.sortBy { it.sortKey.lowercase() }
+        b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        if (rows.isEmpty()) b.status.text = "Nothing added yet. Ask a grown-up to add movies or shows."
         adapter.submit(rows)
+        b.list.scrollToPosition(0)
     }
 
     private fun showEpisodes(seriesId: String) {
         val eps = Profiles.allowedEpisodes(this).filter { it.seriesId == seriesId }
-        if (eps.isEmpty()) { showHome(); return }
-        inSeries = seriesId
+        if (eps.isEmpty()) { showStreaming(); return }
+        inStreaming = true; inSeries = seriesId
         b.title.text = eps.first().seriesName
         b.status.visibility = View.GONE
         adapter.submit(eps.map { ep ->
@@ -118,6 +125,10 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (inSeries != null) showHome() else super.onBackPressed()
+        when {
+            inSeries != null -> showStreaming()
+            inStreaming -> showHome()
+            else -> super.onBackPressed()
+        }
     }
 }

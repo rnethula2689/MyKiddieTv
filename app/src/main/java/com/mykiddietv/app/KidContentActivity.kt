@@ -79,6 +79,7 @@ class KidContentActivity : AppCompatActivity() {
         })
         b.selectAllBtn.setOnClickListener { onSelectAll() }
         b.addBtn.setOnClickListener { onAddSelected() }
+        b.downloadBtn.setOnClickListener { onDownloadSelected() }
         buildAzBar()
 
         connectAndLoad()
@@ -148,10 +149,16 @@ class KidContentActivity : AppCompatActivity() {
             val allUnchecked = pickIds.isNotEmpty() && pickIds.all { removeSet.contains(it) }
             b.selectAllBtn.text = if (allUnchecked) "Keep all" else "Uncheck all"
             b.addBtn.text = if (removeSet.isNotEmpty()) "Remove (${removeSet.size})" else "Remove"
+            b.downloadBtn.visibility = View.GONE
         } else {
             val allSelected = picks.isNotEmpty() && picks.all { isChecked(it) }
             b.selectAllBtn.text = if (allSelected) "Deselect all" else "Select all"
             b.addBtn.text = if (pendingCount() > 0) "Add selected (${pendingCount()})" else "Add selected"
+            // Download applies to movies/episodes only (not live channels).
+            val hasVod = picks.any { it.vod != null || it.episode != null }
+            b.downloadBtn.visibility = if (hasVod) View.VISIBLE else View.GONE
+            val dlCount = pendingVod.size + pendingEpisodes.size
+            b.downloadBtn.text = if (dlCount > 0) "Download selected ($dlCount)" else "Download selected"
         }
     }
 
@@ -179,6 +186,40 @@ class KidContentActivity : AppCompatActivity() {
             }
         }
         adapter.notifyDataSetChanged()
+        updateBottomBar()
+    }
+
+    /** Download the checked movies/episodes for offline (they appear in the kid's Downloaded folder). */
+    private fun onDownloadSelected() {
+        val n = pendingVod.size + pendingEpisodes.size
+        if (n == 0) { b.status.text = "Tick some movies or episodes to download."; return }
+        val names = pendingVod.values.map { it.name } +
+            pendingEpisodes.values.map { "${it.seriesName} — ${it.name}" }
+        val preview = names.take(12).joinToString("\n") { "• $it" } +
+            (if (names.size > 12) "\n…and ${names.size - 12} more" else "")
+        AlertDialog.Builder(this)
+            .setTitle("Download for offline")
+            .setMessage("Download $n movie(s)/episode(s) for ${Profiles.kidName(this)} to watch offline?\n\n$preview")
+            .setPositiveButton("Yes, download") { _, _ -> commitDownloads() }
+            .setNegativeButton("Go back", null)
+            .show()
+    }
+
+    private fun commitDownloads() {
+        var started = 0
+        pendingVod.values.forEach { v ->
+            Downloads.enqueue(applicationContext, v.id, v.name, v.posterUrl, "vod|${v.id}|${v.cmd}")
+            started++
+        }
+        pendingEpisodes.values.forEach { e ->
+            // Title encodes the hierarchy so the Downloads views can group Series ⟫ Season ⟫ Episode.
+            val title = "${e.seriesName} ⟫ ${e.seasonName.ifBlank { "Season" }} ⟫ ${e.name}"
+            Downloads.enqueue(applicationContext, e.key, title, e.poster, e.source)
+            started++
+        }
+        pendingVod.clear(); pendingEpisodes.clear()
+        b.status.text = "Started $started download(s) — see Approved Content → Downloads."
+        backStack.lastOrNull()?.let { display(it) }
         updateBottomBar()
     }
 
