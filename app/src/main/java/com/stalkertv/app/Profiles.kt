@@ -1,0 +1,109 @@
+package com.stalkertv.app
+
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * Kid-mode store: profile names, the parent passcode, and the whitelist of
+ * live channels + VOD titles the kid is allowed to watch. Kept in its own
+ * SharedPreferences file ("kids") so it's independent of provider configs.
+ */
+object Profiles {
+    private const val PREF = "kids"
+
+    /** Set true when the kid whitelist changes, so the kid home reloads on resume. */
+    var dirty = false
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+
+    // ---- profile names ----
+    fun parentName(ctx: Context): String = prefs(ctx).getString("parentName", "")?.ifBlank { "Parent" } ?: "Parent"
+    fun kidName(ctx: Context): String = prefs(ctx).getString("kidName", "")?.ifBlank { "Kids" } ?: "Kids"
+
+    fun setNames(ctx: Context, parent: String, kid: String) {
+        prefs(ctx).edit()
+            .putString("parentName", parent.trim())
+            .putString("kidName", kid.trim())
+            .apply()
+    }
+
+    // ---- passcode ----
+    /** 4-digit parent passcode; empty string means "not set yet" (parent entry is open). */
+    fun passcode(ctx: Context): String = prefs(ctx).getString("passcode", "") ?: ""
+    fun hasPasscode(ctx: Context): Boolean = passcode(ctx).length == 4
+    fun setPasscode(ctx: Context, code: String) { prefs(ctx).edit().putString("passcode", code.trim()).apply() }
+
+    // ---- allowed live channels ----
+    fun allowedChannels(ctx: Context): MutableList<Portal.Channel> {
+        val out = ArrayList<Portal.Channel>()
+        try {
+            val arr = JSONArray(prefs(ctx).getString("channels", "[]") ?: "[]")
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Portal.Channel(
+                        id = o.optString("id"),
+                        name = o.optString("name"),
+                        number = o.optString("number"),
+                        cmd = o.optString("cmd"),
+                        logoUrl = o.optString("logo"),
+                        genreId = o.optString("genreId")
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    fun allowedChannelIds(ctx: Context): Set<String> = allowedChannels(ctx).map { it.id }.toSet()
+
+    fun saveChannels(ctx: Context, list: List<Portal.Channel>) {
+        val arr = JSONArray()
+        for (c in list) {
+            arr.put(
+                JSONObject()
+                    .put("id", c.id).put("name", c.name).put("number", c.number)
+                    .put("cmd", c.cmd).put("logo", c.logoUrl).put("genreId", c.genreId)
+            )
+        }
+        prefs(ctx).edit().putString("channels", arr.toString()).apply()
+        dirty = true
+    }
+
+    // ---- allowed VOD (movies & series) ----
+    fun allowedVod(ctx: Context): MutableList<Portal.VodItem> {
+        val out = ArrayList<Portal.VodItem>()
+        try {
+            val arr = JSONArray(prefs(ctx).getString("vod", "[]") ?: "[]")
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Portal.VodItem(
+                        id = o.optString("id"),
+                        name = o.optString("name"),
+                        cmd = o.optString("cmd"),
+                        posterUrl = o.optString("poster"),
+                        isSeries = o.optBoolean("isSeries")
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    fun allowedVodIds(ctx: Context): Set<String> = allowedVod(ctx).map { it.id }.toSet()
+
+    fun saveVod(ctx: Context, list: List<Portal.VodItem>) {
+        val arr = JSONArray()
+        for (v in list) {
+            arr.put(
+                JSONObject()
+                    .put("id", v.id).put("name", v.name).put("cmd", v.cmd)
+                    .put("poster", v.posterUrl).put("isSeries", v.isSeries)
+            )
+        }
+        prefs(ctx).edit().putString("vod", arr.toString()).apply()
+        dirty = true
+    }
+}

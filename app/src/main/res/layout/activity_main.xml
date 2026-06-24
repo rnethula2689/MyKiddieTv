@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#0b0f14"
+    android:padding="48dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Stalker TV"
+        android:textColor="#19c37d"
+        android:textSize="30sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="24dp" />
+
+    <EditText
+        android:id="@+id/portal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Portal URL (http://host)"
+        android:textColorHint="#5a6675"
+        android:textColor="#e6edf3"
+        android:inputType="textUri"
+        android:singleLine="true"
+        android:imeOptions="actionNext" />
+
+    <EditText
+        android:id="@+id/mac"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="MAC (00:1A:79:xx:xx:xx)"
+        android:textColorHint="#5a6675"
+        android:textColor="#e6edf3"
+        android:singleLine="true"
+        android:imeOptions="actionNext" />
+
+    <EditText
+        android:id="@+id/serial"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="Serial Number (from your provider)"
+        android:textColorHint="#5a6675"
+        android:textColor="#e6edf3"
+        android:singleLine="true"
+        android:imeOptions="actionDone" />
+
+    <Button
+        android:id="@+id/connect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:focusable="true"
+        android:text="Connect" />
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:gravity="center"
+        android:textColor="#e6edf3"
+        android:textSize="16sp"
+        android:text="" />
+</LinearLayout>

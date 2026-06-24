@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#0b0f14"
+    android:padding="32dp">
+
+    <TextView
+        android:id="@+id/greeting"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hi! 👋"
+        android:textColor="#19c37d"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="28dp" />
+
+    <Button
+        android:id="@+id/liveBtn"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:text="📺  Watch Live TV"
+        android:textSize="20sp"
+        android:padding="18dp" />
+
+    <Button
+        android:id="@+id/moviesBtn"
+        android:layout_width="280dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="🎬  Movies &amp; Shows"
+        android:textSize="20sp"
+        android:padding="18dp" />
+
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="center"
+        android:textColor="#8b97a5"
+        android:textSize="15sp"
+        android:text="" />
+</LinearLayout>

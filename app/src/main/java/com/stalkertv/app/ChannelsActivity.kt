@@ -1,0 +1,543 @@
+package com.stalkertv.app
+
+import android.content.Intent
+import android.os.Bundle
+import android.view.View
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.stalkertv.app.databinding.ActivityChannelsBinding
+import java.util.concurrent.Executors
+
+class ChannelsActivity : AppCompatActivity() {
+    private val io = Executors.newSingleThreadExecutor()
+    private lateinit var b: ActivityChannelsBinding
+    private val adapter = RowAdapter()
+
+    data class Row(val label: String, val iconUrl: String?, val sortKey: String = "", val action: () -> Unit)
+    enum class SearchKind { LOCAL, GLOBAL, CHANNELS, VOD_ALL, VOD_CATEGORY }
+    data class Page(
+        val title: String,
+        val rows: List<Row>,
+        val kind: SearchKind = SearchKind.LOCAL,
+        val scopeId: String? = null,
+        val scopeChannels: List<Portal.Channel>? = null
+    )
+
+    private val backStack = ArrayDeque<Page>()
+    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingSearch: Runnable? = null
+    private var searchSeq = 0
+
+    private var allChannels = listOf<Portal.Channel>()
+    private var genres = listOf<Portal.Genre>()
+    private var byGenre = mapOf<String, List<Portal.Channel>>()
+    private var welcomeShown = false
+    private var updateChecked = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        b = ActivityChannelsBinding.inflate(layoutInflater)
+        setContentView(b.root)
+        b.list.layoutManager = LinearLayoutManager(this)
+        b.list.adapter = adapter
+
+        b.search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString() ?: "")
+            override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
+        })
+        b.clearBtn.setOnClickListener { b.search.setText(""); b.search.requestFocus() }
+        buildAzBar()
+
+        b.searchBtn.setOnClickListener { toggleSearch() }
+        b.reloadBtn.setOnClickListener { connectAndLoad() }
+        b.menuBtn.setOnClickListener { showMenu() }
+
+        connectAndLoad()
+        // Self-update disabled in this fork (the published feed belongs to the original app).
+    }
+
+    private fun checkForUpdate() {
+        io.execute {
+            val v = Updater.latest() ?: return@execute
+            if (v.first > BuildConfig.VERSION_CODE) {
+                runOnUiThread {
+                    if (updateChecked) return@runOnUiThread
+                    updateChecked = true
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Update available")
+                        .setMessage("Version ${v.second} is available.\nDownload and install it now?")
+                        .setPositiveButton("Download now") { _, _ -> startUpdate() }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+            }
+        }
+    }
+
+    private fun startUpdate() = AppUpdate.install(this)
+
+    private fun showWelcome() {
+        if (welcomeShown) return
+        welcomeShown = true
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Welcome to Stalker TV")
+            .setMessage(
+                "To start watching, add your IPTV provider:\n\n" +
+                    "1. Open Settings (⚙ top-right, or ⋮ menu → Settings).\n" +
+                    "2. Enter your Portal URL, MAC address, and Serial Number.\n" +
+                    "3. Tap Submit — channels and movies load automatically.\n\n" +
+                    "You get these details from your IPTV provider."
+            )
+            .setPositiveButton("Open Settings") { _, _ -> startActivity(Intent(this, SettingsActivity::class.java)) }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun buildAzBar() {
+        val labels = listOf("ALL") + ('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() }
+        for (lbl in labels) {
+            val tv = android.widget.TextView(this)
+            tv.text = lbl
+            tv.setTextColor(0xFFE6EDF3.toInt())
+            tv.textSize = 15f
+            tv.setPadding(20, 12, 20, 12)
+            tv.isFocusable = true
+            tv.isClickable = true
+            tv.setBackgroundResource(R.drawable.item_bg)
+            tv.setOnClickListener { azFilter(if (lbl == "ALL") null else lbl) }
+            b.azBar.addView(tv)
+        }
+    }
+
+    private fun azFilter(letter: String?) {
+        if (b.search.text.isNotEmpty()) b.search.setText("")
+        val page = backStack.lastOrNull() ?: return
+        if (letter == null) {
+            adapter.submit(page.rows)
+            return
+        }
+        // Movie folders: ask the portal for every title starting with this letter (complete, not just loaded).
+        if (page.kind == SearchKind.VOD_CATEGORY && page.scopeId != null) {
+            val cat = page.scopeId
+            b.status.visibility = View.VISIBLE
+            b.status.text = "Loading “$letter”…"
+            io.execute {
+                val items = Portal.vodByLetter(cat, letter)
+                runOnUiThread {
+                    if (items.isEmpty()) {
+                        b.status.visibility = View.VISIBLE
+                        b.status.text = "No titles starting with “$letter”."
+                    } else {
+                        b.status.visibility = View.GONE
+                    }
+                    adapter.submit(items.map { vodItemRow(it) })
+                }
+            }
+        } else {
+            // Channels / genres / categories are all in memory — filter locally.
+            adapter.submit(page.rows.filter { it.sortKey.trimStart().startsWith(letter, ignoreCase = true) })
+        }
+    }
+
+    private var menuDialog: androidx.appcompat.app.AlertDialog? = null
+    private fun showMenu() {
+        if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
+        val items = arrayOf("🔄   Refresh portal", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+        val dlg = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> connectAndLoad()
+                    1 -> startActivity(Intent(this, SettingsActivity::class.java))
+                    2 -> startActivity(Intent(this, AppUpdatesActivity::class.java))
+                    3 -> About.show(this)
+                    4 -> finishAffinity()
+                }
+            }
+            .setOnDismissListener { menuDialog = null }
+            .create()
+        // Pressing the menu/hamburger key again closes it (Back also closes by default).
+        dlg.setOnKeyListener { d, keyCode, ev ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_MENU && ev.action == android.view.KeyEvent.ACTION_UP) {
+                d.dismiss(); true
+            } else false
+        }
+        menuDialog = dlg
+        dlg.show()
+    }
+
+    private fun confirmExit() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Exit Stalker TV?")
+            .setPositiveButton("Yes") { _, _ -> finishAffinity() }
+            .setNegativeButton("No", null)
+            .show()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_MENU -> return true // handled on key-up (avoids flash)
+            android.view.KeyEvent.KEYCODE_BACK -> { event.startTracking(); return true }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyLongPress(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) { confirmExit(); return true }
+        return super.onKeyLongPress(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_MENU) { showMenu(); return true }
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && !event.isCanceled) {
+            @Suppress("DEPRECATION") onBackPressed(); return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
+    private fun toggleSearch() {
+        if (b.searchRow.visibility == View.VISIBLE) {
+            b.search.setText("")
+            b.searchRow.visibility = View.GONE
+        } else {
+            b.searchRow.visibility = View.VISIBLE
+            b.search.requestFocus()
+            (getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .showSoftInput(b.search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun openLiveGrid(list: List<Portal.Channel>, title: String) {
+        LiveGridActivity.channels = list
+        LiveGridActivity.gridTitle = title
+        LiveGridActivity.kidMode = false
+        startActivity(Intent(this, LiveGridActivity::class.java))
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (Configs.dirty) {
+            Configs.dirty = false
+            connectAndLoad()
+        }
+    }
+
+    /** Read the active provider, connect in the background, then show the home menu. */
+    private fun connectAndLoad() {
+        val acct = Configs.active(this)
+        b.title.text = "Stalker TV"
+        b.search.setText("")
+        backStack.clear()
+        adapter.submit(emptyList())
+        if (acct == null) {
+            b.status.visibility = View.VISIBLE
+            b.status.text = "Welcome! Open Settings (⚙ top-right) to add your IPTV provider."
+            showWelcome()
+            return
+        }
+        Portal.portalUrl = acct.portal
+        Portal.mac = acct.mac
+        Portal.sn = acct.sn
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Loading ${acct.name}…"
+        io.execute {
+            val err = Portal.connect()
+            if (err != null) {
+                runOnUiThread {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = err
+                }
+                return@execute
+            }
+            val ch = Portal.liveChannels()
+            val g = Portal.liveGenres()
+            runOnUiThread {
+                allChannels = ch
+                genres = g
+                byGenre = ch.groupBy { it.genreId }
+                if (ch.isEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = "No channels returned. Check the configuration (⚙)."
+                } else {
+                    b.status.visibility = View.GONE
+                    showHome()
+                }
+            }
+        }
+    }
+
+    // ---- navigation ----
+    private fun push(page: Page) {
+        backStack.addLast(page)
+        display(page)
+    }
+
+    private fun display(page: Page) {
+        b.title.text = page.title
+        b.search.hint = when (page.kind) {
+            SearchKind.GLOBAL -> "Search channels, movies & shows…"
+            SearchKind.CHANNELS -> "Search channels…"
+            SearchKind.VOD_ALL -> "Search movies & shows…"
+            SearchKind.VOD_CATEGORY -> "Search this folder…"
+            SearchKind.LOCAL -> "Filter…"
+        }
+        adapter.submit(page.rows)
+        if (b.search.text.isNotEmpty()) b.search.setText("")
+        b.searchRow.visibility = View.GONE
+        b.list.scrollToPosition(0)
+        b.list.requestFocus()
+    }
+
+    override fun onBackPressed() {
+        if (b.searchRow.visibility == View.VISIBLE) {
+            b.search.setText("")
+            b.searchRow.visibility = View.GONE
+            return
+        }
+        if (backStack.size > 1) {
+            backStack.removeLast()
+            display(backStack.last())
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    private fun filter(q: String) {
+        val page = backStack.lastOrNull() ?: return
+        when (page.kind) {
+            SearchKind.LOCAL -> {
+                val query = q.trim().lowercase()
+                adapter.submit(if (query.isEmpty()) page.rows else page.rows.filter { it.label.lowercase().contains(query) })
+            }
+            SearchKind.CHANNELS -> channelSearch(q, page.scopeChannels ?: allChannels, page)
+            SearchKind.GLOBAL -> globalSearch(q, page)
+            SearchKind.VOD_ALL -> vodSearchUi(q, null, page)
+            SearchKind.VOD_CATEGORY -> vodSearchUi(q, page.scopeId, page)
+        }
+    }
+
+    private fun channelRow(ch: Portal.Channel): Row {
+        val label = "📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name
+        return Row(label, ch.logoUrl, sortKey = ch.name) { play(ch.name) { Portal.createLink(ch.cmd) } }
+    }
+
+    private fun vodItemRow(v: Portal.VodItem): Row {
+        val label = (if (v.isSeries) "📁  " else "🎬  ") + v.name
+        return Row(label, v.posterUrl, sortKey = v.name) {
+            if (v.isSeries) showSeasons(v) else play(v.name) { Portal.playVodUrl(v.id, v.cmd) }
+        }
+    }
+
+    /** In-memory channel search (Live TV scope). */
+    private fun channelSearch(q: String, channels: List<Portal.Channel>, page: Page) {
+        val query = q.trim()
+        if (query.isEmpty()) { b.status.visibility = View.GONE; adapter.submit(page.rows); return }
+        val rows = channels.asSequence()
+            .filter { it.name.contains(query, ignoreCase = true) }
+            .take(500).map { channelRow(it) }.toList()
+        b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        if (rows.isEmpty()) b.status.text = "No channels match “$query”."
+        adapter.submit(rows)
+    }
+
+    /** Global search: channels (instant) + all movies/series (portal). */
+    private fun globalSearch(q: String, page: Page) {
+        val query = q.trim()
+        pendingSearch?.let { searchHandler.removeCallbacks(it) }
+        searchSeq++
+        if (query.isEmpty()) { b.status.visibility = View.GONE; adapter.submit(page.rows); return }
+        val chRows = allChannels.asSequence().filter { it.name.contains(query, ignoreCase = true) }
+            .take(150).map { channelRow(it) }.toList()
+        adapter.submit(chRows)
+        if (query.length < 2) { b.status.visibility = View.GONE; return }
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Searching movies & shows…"
+        val seq = searchSeq
+        val task = Runnable {
+            io.execute {
+                val vod = Portal.vodSearch(query)
+                runOnUiThread {
+                    if (seq != searchSeq) return@runOnUiThread
+                    b.status.visibility = View.GONE
+                    adapter.submit(chRows + vod.map { vodItemRow(it) })
+                }
+            }
+        }
+        pendingSearch = task
+        searchHandler.postDelayed(task, 450)
+    }
+
+    /** VOD search — all categories if catId is null, else scoped to that folder. */
+    private fun vodSearchUi(q: String, catId: String?, page: Page) {
+        val query = q.trim()
+        pendingSearch?.let { searchHandler.removeCallbacks(it) }
+        searchSeq++
+        if (query.isEmpty()) { b.status.visibility = View.GONE; adapter.submit(page.rows); return }
+        if (query.length < 2) return
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Searching…"
+        val seq = searchSeq
+        val task = Runnable {
+            io.execute {
+                val vod = if (catId == null) Portal.vodSearch(query) else Portal.vodSearchInCategory(catId, query)
+                runOnUiThread {
+                    if (seq != searchSeq) return@runOnUiThread
+                    val rows = vod.map { vodItemRow(it) }
+                    b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                    if (rows.isEmpty()) b.status.text = "No results for “$query”."
+                    adapter.submit(rows)
+                }
+            }
+        }
+        pendingSearch = task
+        searchHandler.postDelayed(task, 450)
+    }
+
+    // ---- screens ----
+    private fun showHome() {
+        backStack.clear()
+        push(
+            Page(
+                "Stalker TV",
+                listOf(
+                    Row("📺   Live TV", null) { showLiveGenres() },
+                    Row("🎬   Movies (VOD)", null) { showVodCategories() }
+                ),
+                kind = SearchKind.GLOBAL
+            )
+        )
+    }
+
+    private fun showLiveGenres() {
+        val rows = ArrayList<Row>()
+        rows.add(Row("All Channels  (${allChannels.size})", null, sortKey = "All Channels") { openLiveGrid(allChannels, "All Channels") })
+        for (g in genres) {
+            val list = byGenre[g.id] ?: emptyList()
+            if (list.isNotEmpty()) rows.add(Row("${g.title}  (${list.size})", null, sortKey = g.title) { openLiveGrid(list, g.title) })
+        }
+        push(Page("Live TV", rows, kind = SearchKind.CHANNELS, scopeChannels = allChannels))
+    }
+
+    private fun showChannels(list: List<Portal.Channel>, title: String) {
+        push(Page(title, list.map { channelRow(it) }, kind = SearchKind.CHANNELS, scopeChannels = list))
+    }
+
+    private fun showVodCategories() {
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Loading movies…"
+        io.execute {
+            val cats = Portal.vodCategories()
+            runOnUiThread {
+                b.status.visibility = View.GONE
+                if (cats.isEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = "No VOD categories found."
+                    return@runOnUiThread
+                }
+                push(Page("Movies", cats.map { c -> Row(c.title, null, sortKey = c.title) { showVodList(c) } }, kind = SearchKind.VOD_ALL))
+            }
+        }
+    }
+
+    private fun showVodList(cat: Portal.VodCat) {
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Loading ${cat.title}…"
+        io.execute {
+            val (items, pages) = Portal.vodList(cat.id, 1)
+            runOnUiThread {
+                b.status.visibility = View.GONE
+                push(Page(cat.title, vodRows(cat, ArrayList(items), 1, pages), kind = SearchKind.VOD_CATEGORY, scopeId = cat.id))
+            }
+        }
+    }
+
+    private fun vodRows(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<Row> {
+        val rows = ArrayList<Row>()
+        acc.forEach { v -> rows.add(vodItemRow(v)) }
+        if (loaded < total) {
+            rows.add(Row("⬇  Load more  ($loaded/$total)", null) {
+                b.status.visibility = View.VISIBLE
+                b.status.text = "Loading…"
+                io.execute {
+                    val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                    runOnUiThread {
+                        b.status.visibility = View.GONE
+                        acc.addAll(more)
+                        val page = Page(cat.title, vodRows(cat, acc, loaded + 1, total), kind = SearchKind.VOD_CATEGORY, scopeId = cat.id)
+                        backStack.removeLast()
+                        backStack.addLast(page)
+                        display(page)
+                    }
+                }
+            })
+        }
+        return rows
+    }
+
+    private fun showSeasons(series: Portal.VodItem) {
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Loading ${series.name}…"
+        io.execute {
+            val seasons = Portal.seriesSeasons(series.id)
+            runOnUiThread {
+                b.status.visibility = View.GONE
+                if (seasons.isEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = "No seasons found for ${series.name}."
+                    return@runOnUiThread
+                }
+                push(Page(series.name, seasons.reversed().map { s ->
+                    Row(s.name, null) { showEpisodes(series, s) }
+                }))
+            }
+        }
+    }
+
+    private fun showEpisodes(series: Portal.VodItem, season: Portal.Season) {
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Loading ${season.name}…"
+        io.execute {
+            val eps = Portal.seriesEpisodes(series.id, season.id)
+            runOnUiThread {
+                b.status.visibility = View.GONE
+                if (eps.isEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = "No episodes found."
+                    return@runOnUiThread
+                }
+                push(Page("${series.name} — ${season.name}", eps.reversed().map { e ->
+                    Row(e.name, null) {
+                        play("${series.name}  /  ${season.name}  /  ${e.name}") {
+                            Portal.playEpisodeUrl(series.id, season.id, e.id)
+                        }
+                    }
+                }))
+            }
+        }
+    }
+
+    private fun play(title: String, resolve: () -> String?) {
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Opening $title…"
+        io.execute {
+            val url = resolve()
+            runOnUiThread {
+                if (url.isNullOrEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    val why = Portal.lastError
+                    b.status.text = if (why == "nothing_to_play")
+                        "“$title” — no stream returned. Either the provider's storage is down, or your account's connection limit is reached (another device is already streaming)."
+                    else "Couldn't open “$title” — $why"
+                } else {
+                    b.status.visibility = View.GONE
+                    PlayerActivity.kidMode = false
+                    startActivity(
+                        Intent(this, PlayerActivity::class.java)
+                            .putExtra("url", url)
+                            .putExtra("title", title)
+                    )
+                }
+            }
+        }
+    }
+}
