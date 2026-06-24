@@ -43,6 +43,7 @@ class LiveGridActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityLivegridBinding.inflate(layoutInflater)
         setContentView(b.root)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // preview is live video
 
         all = channels
         b.title.text = gridTitle
@@ -296,18 +297,33 @@ class LiveGridActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleFavorite() {
+        val ch = current ?: return
+        val nowFav = Configs.toggleFavorite(this, ch.id)
+        adapter.notifyDataSetChanged() // refresh the ★ markers
+        android.widget.Toast.makeText(
+            this,
+            if (nowFav) "★  Added “${ch.name}” to Favourites" else "Removed “${ch.name}” from Favourites",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
+
     private var menuDialog: androidx.appcompat.app.AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
+        val favLabel = current?.let {
+            if (Configs.isFavorite(this, it.id)) "☆   Remove from Favourites" else "⭐   Add to Favourites"
+        } ?: "⭐   Favourites"
         val items = if (kidMode)
-            arrayOf("🔄   Refresh", "ℹ️   About")
+            arrayOf("🔄   Refresh", favLabel, "ℹ️   About")
         else
-            arrayOf("🔄   Refresh", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("🔄   Refresh", favLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Refresh") -> refreshGrid()
+                    action.contains("Favourites") -> toggleFavorite()
                     action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)

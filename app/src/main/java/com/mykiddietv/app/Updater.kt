@@ -8,7 +8,6 @@ import java.util.concurrent.TimeUnit
 
 /** Checks the published version file so sideloaded users get notified of new builds. */
 object Updater {
-    // Read the version file published with each release (CI writes it per build), not the static repo copy.
     private const val URL =
         "https://github.com/rnethula2689/MyKiddieTv/releases/download/apk-latest/latest_version.json"
     private val client = OkHttpClient.Builder()

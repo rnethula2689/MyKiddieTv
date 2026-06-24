@@ -52,27 +52,29 @@ Repl "$J\LiveGridActivity.kt" @'
 '@ "openFullscreen kidMode"
 
 Repl "$J\LiveGridActivity.kt" @'
-        val items = arrayOf("🔄   Refresh", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+        val items = arrayOf("🔄   Refresh", favLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> refreshGrid()
-                    1 -> startActivity(Intent(this, SettingsActivity::class.java))
-                    2 -> startActivity(Intent(this, AppUpdatesActivity::class.java))
-                    3 -> About.show(this)
-                    4 -> finishAffinity()
+                    1 -> toggleFavorite()
+                    2 -> startActivity(Intent(this, SettingsActivity::class.java))
+                    3 -> startActivity(Intent(this, AppUpdatesActivity::class.java))
+                    4 -> About.show(this)
+                    5 -> finishAffinity()
                 }
             }
 '@ @'
         val items = if (kidMode)
-            arrayOf("🔄   Refresh", "ℹ️   About", "✖   Exit")
+            arrayOf("🔄   Refresh", favLabel, "ℹ️   About")
         else
-            arrayOf("🔄   Refresh", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("🔄   Refresh", favLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Refresh") -> refreshGrid()
+                    action.contains("Favourites") -> toggleFavorite()
                     action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)
@@ -312,12 +314,6 @@ Repl "$J\ChannelsActivity.kt" @'
 '@ "play() PlayerActivity kidMode reset"
 
 "== Guardrails: remove Exit from kid menus =="
-Repl "$J\LiveGridActivity.kt" @'
-            arrayOf("🔄   Refresh", "ℹ️   About", "✖   Exit")
-'@ @'
-            arrayOf("🔄   Refresh", "ℹ️   About")
-'@ "LiveGrid kid menu drop Exit"
-
 Repl "$J\LiveVlcActivity.kt" @'
             arrayOf("ℹ️   About", "✖   Exit")
 '@ @'
