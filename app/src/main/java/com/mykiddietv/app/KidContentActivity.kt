@@ -1,58 +1,77 @@
 package com.mykiddietv.app
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.inputmethod.InputMethodManager
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.mykiddietv.app.databinding.ActivityKidcontentBinding
 import java.util.concurrent.Executors
 
 /**
- * Parent-only screen for whitelisting kid content. Two tabs:
- *   • Live TV — tick individual channels.
- *   • Movies  — search the VOD library and tick individual movies/series.
- * Selections auto-save to [Profiles] as they're toggled.
+ * Parent-only screen for whitelisting kid content. It mirrors the parent home
+ * (Live TV / Movies, global search, A-Z) but every channel / movie row carries a
+ * checkbox. "Select all" ticks everything in the current folder, "Add selected"
+ * asks for confirmation, then merges the picks into the kid whitelist ([Profiles]).
  */
 class KidContentActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var b: ActivityKidcontentBinding
-    private val adapter = CheckAdapter { pos -> onToggle(pos) }
+    private lateinit var adapter: KidPickAdapter
 
-    private enum class Mode { LIVE, MOVIES }
-    private var mode = Mode.LIVE
+    enum class Kind { FOLDERS, GLOBAL, CHANNELS, VOD_ALL, VOD_CATEGORY }
+    data class Page(
+        val title: String,
+        val nodes: List<KidNode>,
+        val kind: Kind,
+        val scopeChannels: List<Portal.Channel>? = null,
+        val scopeCat: String? = null
+    )
 
-    // Working selections (id -> full object), seeded from saved whitelist.
-    private val selChannels = LinkedHashMap<String, Portal.Channel>()
-    private val selVod = LinkedHashMap<String, Portal.VodItem>()
+    private val backStack = ArrayDeque<Page>()
+    private var displayed = listOf<KidNode>()   // what the adapter currently shows (page nodes or search/az results)
+
+    // Pending picks (accumulate across folders until "Add selected").
+    private val pendingChannels = LinkedHashMap<String, Portal.Channel>()
+    private val pendingVod = LinkedHashMap<String, Portal.VodItem>()
+    // Already-saved ids, for the "✓ added" badge. Refreshed after each add.
+    private var savedChannelIds = setOf<String>()
+    private var savedVodIds = setOf<String>()
 
     private var allChannels = listOf<Portal.Channel>()
-    private val channelById = HashMap<String, Portal.Channel>()
-    private val vodById = HashMap<String, Portal.VodItem>()
+    private var genres = listOf<Portal.Genre>()
+    private var byGenre = mapOf<String, List<Portal.Channel>>()
 
     private var pendingSearch: Runnable? = null
     private var searchSeq = 0
-    private var connected = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityKidcontentBinding.inflate(layoutInflater)
         setContentView(b.root)
+
+        savedChannelIds = Profiles.allowedChannelIds(this)
+        savedVodIds = Profiles.allowedVodIds(this)
+
+        adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) })
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
 
-        Profiles.allowedChannels(this).forEach { selChannels[it.id] = it }
-        Profiles.allowedVod(this).forEach { selVod[it.id] = it; vodById[it.id] = it }
-
-        b.liveTab.setOnClickListener { switchMode(Mode.LIVE) }
-        b.moviesTab.setOnClickListener { switchMode(Mode.MOVIES) }
-        b.clearBtn.setOnClickListener { b.search.setText("") }
+        b.searchBtn.setOnClickListener { toggleSearch() }
+        b.clearBtn.setOnClickListener { b.search.setText(""); b.search.requestFocus() }
         b.search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun afterTextChanged(s: android.text.Editable?) = onQuery(s?.toString() ?: "")
+            override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString() ?: "")
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
         })
+        b.selectAllBtn.setOnClickListener { onSelectAll() }
+        b.addBtn.setOnClickListener { onAddSelected() }
+        buildAzBar()
 
         connectAndLoad()
     }
@@ -60,7 +79,7 @@ class KidContentActivity : AppCompatActivity() {
     private fun connectAndLoad() {
         val acct = Configs.active(this)
         if (acct == null) {
-            b.status.text = "Add an IPTV provider first (IPTV Configuration below in Settings)."
+            b.status.text = "Add an IPTV provider first (IPTV Configuration in Settings)."
             return
         }
         Portal.portalUrl = acct.portal
@@ -70,94 +89,321 @@ class KidContentActivity : AppCompatActivity() {
         io.execute {
             val err = Portal.connect()
             val ch = if (err == null) Portal.liveChannels() else emptyList()
+            val g = if (err == null) Portal.liveGenres() else emptyList()
             runOnUiThread {
                 if (err != null) { b.status.text = err; return@runOnUiThread }
-                connected = true
                 allChannels = ch
-                channelById.clear()
-                ch.forEach { channelById[it.id] = it }
-                switchMode(Mode.LIVE)
+                genres = g
+                byGenre = ch.groupBy { it.genreId }
+                b.status.text = ""
+                showHome()
             }
         }
     }
 
-    private fun switchMode(m: Mode) {
-        mode = m
-        b.search.setText("")
-        b.search.hint = if (m == Mode.LIVE) "Search channels…" else "Search movies & shows…"
-        render("")
+    // ---- selection helpers ----
+    private fun isChecked(n: KidNode): Boolean =
+        (n.channel != null && pendingChannels.containsKey(n.channel.id)) ||
+            (n.vod != null && pendingVod.containsKey(n.vod.id))
+
+    private fun toggle(n: KidNode) {
+        n.channel?.let { if (pendingChannels.remove(it.id) == null) pendingChannels[it.id] = it }
+        n.vod?.let { if (pendingVod.remove(it.id) == null) pendingVod[it.id] = it }
     }
 
-    private fun onQuery(q: String) {
-        if (mode == Mode.LIVE) render(q) else movieSearch(q)
+    private fun onRowClick(pos: Int) {
+        val n = adapter.nodeAt(pos)
+        val open = n.open
+        if (open != null) { open(); return }
+        toggle(n)
+        adapter.notifyItemChanged(pos)
+        updateBottomBar()
     }
 
-    // ---- LIVE ----
-    private fun render(q: String) {
-        if (mode == Mode.LIVE) {
-            val query = q.trim()
-            val list = if (query.isEmpty()) allChannels
-            else allChannels.filter { it.name.contains(query, ignoreCase = true) }
-            b.status.text = "${selChannels.size} channel(s) selected"
-            adapter.submit(list.map { ch ->
-                CheckAdapter.Item(ch.id, channelLabel(ch), ch.logoUrl, selChannels.containsKey(ch.id))
-            })
+    private fun pendingCount() = pendingChannels.size + pendingVod.size
+
+    private fun updateBottomBar() {
+        val picks = displayed.filter { it.isPick }
+        b.bottomBar.visibility = if (picks.isEmpty()) View.GONE else View.VISIBLE
+        val allSelected = picks.isNotEmpty() && picks.all { isChecked(it) }
+        b.selectAllBtn.text = if (allSelected) "Deselect all" else "Select all"
+        b.addBtn.text = if (pendingCount() > 0) "Add selected (${pendingCount()})" else "Add selected"
+    }
+
+    private fun onSelectAll() {
+        val picks = displayed.filter { it.isPick }
+        if (picks.isEmpty()) return
+        val allSelected = picks.all { isChecked(it) }
+        if (allSelected) {
+            picks.forEach { it.channel?.let { c -> pendingChannels.remove(c.id) }; it.vod?.let { v -> pendingVod.remove(v.id) } }
         } else {
-            // Movies tab with empty query → show what's already selected.
-            b.status.text = "${selVod.size} movie(s)/show(s) selected — type to search for more"
-            adapter.submit(selVod.values.map { v ->
-                CheckAdapter.Item(v.id, vodLabel(v), v.posterUrl, true)
-            })
+            picks.forEach { it.channel?.let { c -> pendingChannels[c.id] = c }; it.vod?.let { v -> pendingVod[v.id] = v } }
+        }
+        adapter.notifyDataSetChanged()
+        updateBottomBar()
+    }
+
+    private fun onAddSelected() {
+        if (pendingCount() == 0) {
+            b.status.text = "Tick some channels or movies first."
+            return
+        }
+        val names = (pendingChannels.values.map { it.name } + pendingVod.values.map { it.name })
+        val preview = names.take(12).joinToString("\n") { "• $it" } +
+            (if (names.size > 12) "\n…and ${names.size - 12} more" else "")
+        val msg = "Add ${pendingChannels.size} channel(s) and ${pendingVod.size} movie(s)/show(s) " +
+            "to ${Profiles.kidName(this)}'s list?\n\n$preview"
+        AlertDialog.Builder(this)
+            .setTitle("Confirm")
+            .setMessage(msg)
+            .setPositiveButton("Yes, add") { _, _ -> commitSelection() }
+            .setNegativeButton("Go back", null)
+            .show()
+    }
+
+    private fun commitSelection() {
+        // Merge picks into the saved whitelist (union — never drops existing).
+        val ch = Profiles.allowedChannels(this).associateBy { it.id }.toMutableMap()
+        pendingChannels.forEach { ch[it.key] = it.value }
+        Profiles.saveChannels(this, ch.values.toList())
+
+        val vod = Profiles.allowedVod(this).associateBy { it.id }.toMutableMap()
+        pendingVod.forEach { vod[it.key] = it.value }
+        Profiles.saveVod(this, vod.values.toList())
+
+        val added = pendingCount()
+        pendingChannels.clear(); pendingVod.clear()
+        savedChannelIds = Profiles.allowedChannelIds(this)
+        savedVodIds = Profiles.allowedVodIds(this)
+        b.status.text = "Added $added item(s) to ${Profiles.kidName(this)}'s list ✓"
+        // Rebuild current view so badges/checkboxes refresh.
+        backStack.lastOrNull()?.let { display(rebuildBadges(it)) }
+    }
+
+    /** Re-evaluate the "already added" badge on a page's pick nodes. */
+    private fun rebuildBadges(p: Page): Page {
+        val nodes = p.nodes.map { n ->
+            when {
+                n.channel != null -> n.copy(alreadyAdded = savedChannelIds.contains(n.channel.id))
+                n.vod != null -> n.copy(alreadyAdded = savedVodIds.contains(n.vod.id))
+                else -> n
+            }
+        }
+        return p.copy(nodes = nodes)
+    }
+
+    // ---- navigation ----
+    private fun push(p: Page) { backStack.addLast(p); display(p) }
+
+    private fun display(p: Page) {
+        if (backStack.isNotEmpty()) backStack[backStack.size - 1] = p
+        b.title.text = p.title
+        if (b.search.text.isNotEmpty()) b.search.setText("")
+        b.searchRow.visibility = View.GONE
+        submit(p.nodes)
+        b.list.scrollToPosition(0)
+        b.list.requestFocus()
+    }
+
+    private fun submit(nodes: List<KidNode>) {
+        displayed = nodes
+        adapter.submit(nodes)
+        updateBottomBar()
+    }
+
+    override fun onBackPressed() {
+        if (b.searchRow.visibility == View.VISIBLE) {
+            b.search.setText(""); b.searchRow.visibility = View.GONE; return
+        }
+        if (backStack.size > 1) {
+            backStack.removeLast()
+            display(backStack.last())
+        } else super.onBackPressed()
+    }
+
+    // ---- screens ----
+    private fun showHome() {
+        backStack.clear()
+        push(Page("Manage Kid Content", listOf(
+            KidNode("📺   Live TV", null, "Live TV", open = { showLive() }),
+            KidNode("🎬   Movies & Shows", null, "Movies", open = { showMovies() })
+        ), Kind.GLOBAL))
+    }
+
+    private fun showLive() {
+        val nodes = ArrayList<KidNode>()
+        nodes.add(KidNode("All Channels  (${allChannels.size})", null, "All Channels",
+            open = { showChannels(allChannels, "All Channels") }))
+        for (g in genres) {
+            val list = byGenre[g.id] ?: emptyList()
+            if (list.isNotEmpty()) nodes.add(KidNode("${g.title}  (${list.size})", null, g.title,
+                open = { showChannels(list, g.title) }))
+        }
+        push(Page("Live TV", nodes, Kind.CHANNELS, scopeChannels = allChannels))
+    }
+
+    private fun showChannels(list: List<Portal.Channel>, title: String) {
+        push(Page(title, list.map { channelNode(it) }, Kind.CHANNELS, scopeChannels = list))
+    }
+
+    private fun showMovies() {
+        b.status.text = "Loading movies…"
+        io.execute {
+            val cats = Portal.vodCategories()
+            runOnUiThread {
+                b.status.text = ""
+                if (cats.isEmpty()) { b.status.text = "No movie categories found."; return@runOnUiThread }
+                push(Page("Movies", cats.map { c ->
+                    KidNode(c.title, null, c.title, open = { showVodList(c) })
+                }, Kind.VOD_ALL))
+            }
         }
     }
 
-    private fun channelLabel(ch: Portal.Channel) =
-        "📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name
+    private fun showVodList(cat: Portal.VodCat) {
+        b.status.text = "Loading ${cat.title}…"
+        io.execute {
+            val (items, pages) = Portal.vodList(cat.id, 1)
+            runOnUiThread {
+                b.status.text = ""
+                push(Page(cat.title, vodNodes(cat, ArrayList(items), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
+            }
+        }
+    }
 
-    private fun vodLabel(v: Portal.VodItem) = (if (v.isSeries) "📁  " else "🎬  ") + v.name
+    private fun vodNodes(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<KidNode> {
+        val nodes = ArrayList<KidNode>()
+        acc.forEach { nodes.add(vodNode(it)) }
+        if (loaded < total) {
+            nodes.add(KidNode("⬇  Load more  ($loaded/$total)", null, "", open = {
+                b.status.text = "Loading…"
+                io.execute {
+                    val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                    runOnUiThread {
+                        b.status.text = ""
+                        acc.addAll(more)
+                        display(Page(cat.title, vodNodes(cat, acc, loaded + 1, total), Kind.VOD_CATEGORY, scopeCat = cat.id))
+                    }
+                }
+            }))
+        }
+        return nodes
+    }
 
-    // ---- MOVIES search ----
-    private fun movieSearch(q: String) {
+    private fun channelNode(ch: Portal.Channel) = KidNode(
+        "📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name,
+        ch.logoUrl, ch.name, channel = ch, alreadyAdded = savedChannelIds.contains(ch.id)
+    )
+
+    private fun vodNode(v: Portal.VodItem) = KidNode(
+        (if (v.isSeries) "📁  " else "🎬  ") + v.name,
+        v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id)
+    )
+
+    // ---- search ----
+    private fun toggleSearch() {
+        if (b.searchRow.visibility == View.VISIBLE) {
+            b.search.setText(""); b.searchRow.visibility = View.GONE
+        } else {
+            b.searchRow.visibility = View.VISIBLE
+            b.search.requestFocus()
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+                .showSoftInput(b.search, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun filter(q: String) {
+        val page = backStack.lastOrNull() ?: return
         val query = q.trim()
-        pendingSearch?.let { ui.removeCallbacks(it) }
-        searchSeq++
-        if (query.length < 2) { render(""); return }
+        when (page.kind) {
+            Kind.FOLDERS -> submit(if (query.isEmpty()) page.nodes else page.nodes.filter { it.label.contains(query, true) })
+            Kind.CHANNELS -> {
+                if (query.isEmpty()) { submit(page.nodes); return }
+                val list = (page.scopeChannels ?: allChannels).asSequence()
+                    .filter { it.name.contains(query, true) }.take(500).map { channelNode(it) }.toList()
+                b.status.text = if (list.isEmpty()) "No channels match “$query”." else ""
+                submit(list)
+            }
+            Kind.GLOBAL -> globalSearch(query, page)
+            Kind.VOD_ALL -> vodSearch(query, null, page)
+            Kind.VOD_CATEGORY -> vodSearch(query, page.scopeCat, page)
+        }
+    }
+
+    private fun globalSearch(query: String, page: Page) {
+        pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
+        if (query.isEmpty()) { b.status.text = ""; submit(page.nodes); return }
+        val chNodes = allChannels.asSequence().filter { it.name.contains(query, true) }
+            .take(150).map { channelNode(it) }.toList()
+        submit(chNodes)
+        if (query.length < 2) return
+        b.status.text = "Searching movies & shows…"
+        val seq = searchSeq
+        val task = Runnable {
+            io.execute {
+                val vod = Portal.vodSearch(query)
+                runOnUiThread {
+                    if (seq != searchSeq) return@runOnUiThread
+                    b.status.text = ""
+                    submit(chNodes + vod.map { vodNode(it) })
+                }
+            }
+        }
+        pendingSearch = task; ui.postDelayed(task, 450)
+    }
+
+    private fun vodSearch(query: String, catId: String?, page: Page) {
+        pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
+        if (query.isEmpty()) { b.status.text = ""; submit(page.nodes); return }
+        if (query.length < 2) return
         b.status.text = "Searching…"
         val seq = searchSeq
         val task = Runnable {
             io.execute {
-                val results = Portal.vodSearch(query)
+                val vod = if (catId == null) Portal.vodSearch(query) else Portal.vodSearchInCategory(catId, query)
                 runOnUiThread {
                     if (seq != searchSeq) return@runOnUiThread
-                    results.forEach { vodById[it.id] = it }
-                    b.status.text = if (results.isEmpty()) "No results for “$query”."
-                        else "${results.size} result(s) — ${selVod.size} selected"
-                    adapter.submit(results.map { v ->
-                        CheckAdapter.Item(v.id, vodLabel(v), v.posterUrl, selVod.containsKey(v.id))
-                    })
+                    val nodes = vod.map { vodNode(it) }
+                    b.status.text = if (nodes.isEmpty()) "No results for “$query”." else ""
+                    submit(nodes)
                 }
             }
         }
-        pendingSearch = task
-        ui.postDelayed(task, 450)
+        pendingSearch = task; ui.postDelayed(task, 450)
     }
 
-    // ---- toggle + save ----
-    private fun onToggle(pos: Int) {
-        if (pos < 0) return
-        val item = adapter.itemAt(pos)
-        if (mode == Mode.LIVE) {
-            if (selChannels.containsKey(item.id)) selChannels.remove(item.id)
-            else channelById[item.id]?.let { selChannels[item.id] = it }
-            Profiles.saveChannels(this, selChannels.values.toList())
-            b.status.text = "${selChannels.size} channel(s) selected"
-        } else {
-            if (selVod.containsKey(item.id)) selVod.remove(item.id)
-            else vodById[item.id]?.let { selVod[item.id] = it }
-            Profiles.saveVod(this, selVod.values.toList())
-            b.status.text = "${selVod.size} movie(s)/show(s) selected"
+    // ---- A-Z ----
+    private fun buildAzBar() {
+        val labels = listOf("ALL") + ('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() }
+        for (lbl in labels) {
+            val tv = android.widget.TextView(this)
+            tv.text = lbl
+            tv.setTextColor(0xFFE6EDF3.toInt())
+            tv.textSize = 15f
+            tv.setPadding(20, 12, 20, 12)
+            tv.isFocusable = true; tv.isClickable = true
+            tv.setBackgroundResource(R.drawable.item_bg)
+            tv.setOnClickListener { azFilter(if (lbl == "ALL") null else lbl) }
+            b.azBar.addView(tv)
         }
-        item.checked = !item.checked
-        adapter.notifyItemChanged(pos)
+    }
+
+    private fun azFilter(letter: String?) {
+        if (b.search.text.isNotEmpty()) b.search.setText("")
+        val page = backStack.lastOrNull() ?: return
+        if (letter == null) { submit(page.nodes); return }
+        if (page.kind == Kind.VOD_CATEGORY && page.scopeCat != null) {
+            val cat = page.scopeCat
+            b.status.text = "Loading “$letter”…"
+            io.execute {
+                val items = Portal.vodByLetter(cat, letter)
+                runOnUiThread {
+                    b.status.text = if (items.isEmpty()) "No titles starting with “$letter”." else ""
+                    submit(items.map { vodNode(it) })
+                }
+            }
+        } else {
+            submit(page.nodes.filter { it.sortKey.trimStart().startsWith(letter, ignoreCase = true) })
+        }
     }
 }

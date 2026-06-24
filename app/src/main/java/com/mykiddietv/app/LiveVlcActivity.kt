@@ -123,7 +123,6 @@ class LiveVlcActivity : AppCompatActivity() {
     private var menuDialog: AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
-        // Kid mode strips Settings / App updates so only safe actions remain.
         val items = if (kidMode)
             arrayOf("ℹ️   About", "✖   Exit")
         else
