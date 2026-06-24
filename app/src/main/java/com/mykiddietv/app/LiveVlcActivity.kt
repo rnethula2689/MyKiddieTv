@@ -31,8 +31,8 @@ class LiveVlcActivity : AppCompatActivity() {
     private var channels: List<Portal.Channel> = emptyList()
     private var chIndex = -1
     private var titleText = ""
-    private var screenLock: ScreenLock? = null
     private var hideBarRunnable: Runnable? = null
+    private var screenLock: ScreenLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,7 +147,7 @@ class LiveVlcActivity : AppCompatActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (screenLock?.locked == true) return true // swallow everything while screen-locked
+        if (screenLock?.locked == true) return true
         if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
                 KeyEvent.KEYCODE_MENU -> { showMenu(); return true }
@@ -160,7 +160,7 @@ class LiveVlcActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (screenLock?.locked == true) return // can't leave while screen-locked
+        if (screenLock?.locked == true) return
         super.onBackPressed()
     }
 

@@ -38,7 +38,7 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         var liveChannels: List<Portal.Channel> = emptyList()
-        // Set by the launching screen; hides parent-only menu items (Settings, App updates) for kids.
+        // Set by the launching screen; hides parent-only menu items for kids.
         var kidMode: Boolean = false
     }
 
@@ -194,7 +194,7 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Menu key opens the overlay menu; any other key (except Back/volume) re-shows the controls. */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
-        if (screenLock?.locked == true) return true // swallow everything while screen-locked
+        if (screenLock?.locked == true) return true
         val kc = event.keyCode
         if (kc == android.view.KeyEvent.KEYCODE_MENU) {
             if (event.action == android.view.KeyEvent.ACTION_UP) showMenu()
@@ -275,7 +275,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        if (screenLock?.locked == true) return // can't leave while screen-locked
+        if (screenLock?.locked == true) return
         super.onBackPressed()
     }
 

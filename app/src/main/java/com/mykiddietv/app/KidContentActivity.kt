@@ -30,7 +30,8 @@ class KidContentActivity : AppCompatActivity() {
         val nodes: List<KidNode>,
         val kind: Kind,
         val scopeChannels: List<Portal.Channel>? = null,
-        val scopeCat: String? = null
+        val scopeCat: String? = null,
+        val manage: String? = null   // null = add mode; "ch"/"vod" = managing already-approved content
     )
 
     private val backStack = ArrayDeque<Page>()
@@ -44,6 +45,10 @@ class KidContentActivity : AppCompatActivity() {
     private var savedChannelIds = setOf<String>()
     private var savedVodIds = setOf<String>()
     private var savedEpisodeKeys = setOf<String>()
+
+    // Approved-content management: items start checked; unchecking adds to removeSet → "Remove".
+    private val removeSet = HashSet<String>()
+    private var currentManage: String? = null   // mirrors the current page's manage type ("ch"/"vod")
 
     private var allChannels = listOf<Portal.Channel>()
     private var genres = listOf<Portal.Genre>()
@@ -105,10 +110,18 @@ class KidContentActivity : AppCompatActivity() {
     }
 
     // ---- selection helpers ----
-    private fun isChecked(n: KidNode): Boolean =
-        (n.channel != null && pendingChannels.containsKey(n.channel.id)) ||
+    private fun isChecked(n: KidNode): Boolean {
+        // Manage mode: approved items show checked until the parent unchecks (= marks to remove).
+        if (currentManage != null) { val id = n.pickId; return id != null && !removeSet.contains(id) }
+        return (n.channel != null && pendingChannels.containsKey(n.channel.id)) ||
             (n.vod != null && pendingVod.containsKey(n.vod.id)) ||
             (n.episode != null && pendingEpisodes.containsKey(n.episode.key))
+    }
+
+    private fun toggleRemove(n: KidNode) {
+        val id = n.pickId ?: return
+        if (!removeSet.remove(id)) removeSet.add(id)
+    }
 
     private fun toggle(n: KidNode) {
         n.channel?.let { if (pendingChannels.remove(it.id) == null) pendingChannels[it.id] = it }
@@ -120,7 +133,7 @@ class KidContentActivity : AppCompatActivity() {
         val n = adapter.nodeAt(pos)
         val open = n.open
         if (open != null) { open(); return }
-        toggle(n)
+        if (currentManage != null) toggleRemove(n) else toggle(n)
         adapter.notifyItemChanged(pos)
         updateBottomBar()
     }
@@ -130,14 +143,27 @@ class KidContentActivity : AppCompatActivity() {
     private fun updateBottomBar() {
         val picks = displayed.filter { it.isPick }
         b.bottomBar.visibility = if (picks.isEmpty()) View.GONE else View.VISIBLE
-        val allSelected = picks.isNotEmpty() && picks.all { isChecked(it) }
-        b.selectAllBtn.text = if (allSelected) "Deselect all" else "Select all"
-        b.addBtn.text = if (pendingCount() > 0) "Add selected (${pendingCount()})" else "Add selected"
+        if (currentManage != null) {
+            val pickIds = picks.mapNotNull { it.pickId }
+            val allUnchecked = pickIds.isNotEmpty() && pickIds.all { removeSet.contains(it) }
+            b.selectAllBtn.text = if (allUnchecked) "Keep all" else "Uncheck all"
+            b.addBtn.text = if (removeSet.isNotEmpty()) "Remove (${removeSet.size})" else "Remove"
+        } else {
+            val allSelected = picks.isNotEmpty() && picks.all { isChecked(it) }
+            b.selectAllBtn.text = if (allSelected) "Deselect all" else "Select all"
+            b.addBtn.text = if (pendingCount() > 0) "Add selected (${pendingCount()})" else "Add selected"
+        }
     }
 
     private fun onSelectAll() {
         val picks = displayed.filter { it.isPick }
         if (picks.isEmpty()) return
+        if (currentManage != null) {
+            val pickIds = picks.mapNotNull { it.pickId }
+            val allUnchecked = pickIds.all { removeSet.contains(it) }
+            pickIds.forEach { if (allUnchecked) removeSet.remove(it) else removeSet.add(it) }
+            adapter.notifyDataSetChanged(); updateBottomBar(); return
+        }
         val allSelected = picks.all { isChecked(it) }
         if (allSelected) {
             picks.forEach {
@@ -157,6 +183,7 @@ class KidContentActivity : AppCompatActivity() {
     }
 
     private fun onAddSelected() {
+        if (currentManage != null) { onRemoveSelected(); return }
         if (pendingCount() == 0) {
             b.status.text = "Tick some channels or movies first."
             return
@@ -218,6 +245,7 @@ class KidContentActivity : AppCompatActivity() {
 
     private fun display(p: Page) {
         if (backStack.isNotEmpty()) backStack[backStack.size - 1] = p
+        currentManage = p.manage
         b.title.text = p.title
         if (b.search.text.isNotEmpty()) b.search.setText("")
         b.searchRow.visibility = View.GONE
@@ -247,8 +275,70 @@ class KidContentActivity : AppCompatActivity() {
         backStack.clear()
         push(Page("Manage Kid Content", listOf(
             KidNode("📺   Live TV", null, "Live TV", open = { showLive() }),
-            KidNode("🎬   Movies & Shows", null, "Movies", open = { showMovies() })
+            KidNode("🎬   Movies & Shows", null, "Movies", open = { showMovies() }),
+            KidNode("✅   Approved Content  (review / remove)", null, "Approved", open = { showApproved() })
         ), Kind.GLOBAL))
+    }
+
+    // ---- Approved Content (review & remove already-whitelisted items) ----
+    private fun showApproved() {
+        val nCh = Profiles.allowedChannels(this).size
+        val nVod = Profiles.allowedVod(this).count { !it.isSeries } + Profiles.allowedEpisodes(this).size
+        push(Page("Approved Content", listOf(
+            KidNode("📺   Approved Live TV Channels  ($nCh)", null, "", open = { showApprovedChannels() }),
+            KidNode("🎬   Approved Movies & Shows  ($nVod)", null, "", open = { showApprovedVod() })
+        ), Kind.FOLDERS))
+    }
+
+    private fun approvedChannelsPage(): Page {
+        val nodes = Profiles.allowedChannels(this).map { ch ->
+            KidNode("📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name,
+                ch.logoUrl, ch.name, channel = ch)
+        }
+        return Page("Approved Live TV", nodes, Kind.FOLDERS, manage = "ch")
+    }
+
+    private fun approvedVodPage(): Page {
+        val movies = Profiles.allowedVod(this).filter { !it.isSeries }.map { v ->
+            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v)
+        }
+        val eps = Profiles.allowedEpisodes(this).map { e ->
+            KidNode("📺  ${e.seriesName} — ${e.name}", e.poster, e.name, episode = e)
+        }
+        return Page("Approved Movies & Shows", movies + eps, Kind.FOLDERS, manage = "vod")
+    }
+
+    private fun showApprovedChannels() { removeSet.clear(); push(approvedChannelsPage()) }
+    private fun showApprovedVod() { removeSet.clear(); push(approvedVodPage()) }
+
+    private fun onRemoveSelected() {
+        if (removeSet.isEmpty()) { b.status.text = "Uncheck the items you want to remove."; return }
+        val names = displayed.filter { val id = it.pickId; id != null && removeSet.contains(id) }.map { it.label }
+        val preview = names.take(12).joinToString("\n") { "• $it" } +
+            (if (names.size > 12) "\n…and ${names.size - 12} more" else "")
+        AlertDialog.Builder(this)
+            .setTitle("Confirm")
+            .setMessage("Remove ${removeSet.size} item(s) from ${Profiles.kidName(this)}'s list?\n\n$preview")
+            .setPositiveButton("Yes, remove") { _, _ -> commitRemoval() }
+            .setNegativeButton("Go back", null)
+            .show()
+    }
+
+    private fun commitRemoval() {
+        when (currentManage) {
+            "ch" -> Profiles.saveChannels(this, Profiles.allowedChannels(this).filterNot { removeSet.contains(it.id) })
+            "vod" -> {
+                Profiles.saveVod(this, Profiles.allowedVod(this).filterNot { removeSet.contains(it.id) })
+                Profiles.saveEpisodes(this, Profiles.allowedEpisodes(this).filterNot { removeSet.contains(it.key) })
+            }
+        }
+        val removed = removeSet.size
+        removeSet.clear()
+        savedChannelIds = Profiles.allowedChannelIds(this)
+        savedVodIds = Profiles.allowedVodIds(this)
+        savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
+        b.status.text = "Removed $removed item(s) ✓"
+        display(if (currentManage == "ch") approvedChannelsPage() else approvedVodPage())
     }
 
     private fun showLive() {
