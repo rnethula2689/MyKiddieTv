@@ -58,18 +58,9 @@
 
             <Button
                 android:id="@+id/saveProfileBtn"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="Save profile" />
-
-            <Button
-                android:id="@+id/kidContentBtn"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="Manage Kid Content" />
         </LinearLayout>
 
         <TextView

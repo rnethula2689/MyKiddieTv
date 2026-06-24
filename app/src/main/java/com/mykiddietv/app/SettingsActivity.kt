@@ -29,9 +29,6 @@ class SettingsActivity : AppCompatActivity() {
         b.kidName.setText(Profiles.kidName(this))
         b.passcode.setText(Profiles.passcode(this))
         b.saveProfileBtn.setOnClickListener { onSaveProfile() }
-        b.kidContentBtn.setOnClickListener {
-            startActivity(android.content.Intent(this, KidContentActivity::class.java))
-        }
 
         b.ossKey.setText(Configs.ossKey(this))
         b.saveKeyBtn.setOnClickListener {

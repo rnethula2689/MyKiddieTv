@@ -131,9 +131,6 @@ Repl "$J\SettingsActivity.kt" @'
         b.kidName.setText(Profiles.kidName(this))
         b.passcode.setText(Profiles.passcode(this))
         b.saveProfileBtn.setOnClickListener { onSaveProfile() }
-        b.kidContentBtn.setOnClickListener {
-            startActivity(android.content.Intent(this, KidContentActivity::class.java))
-        }
 '@ "Settings onCreate hooks"
 
 Repl "$J\SettingsActivity.kt" @'
@@ -215,18 +212,9 @@ Repl "$L\activity_settings.xml" @'
 
             <Button
                 android:id="@+id/saveProfileBtn"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="Save profile" />
-
-            <Button
-                android:id="@+id/kidContentBtn"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="Manage Kid Content" />
         </LinearLayout>
 
         <TextView
@@ -421,6 +409,22 @@ Repl "$J\Updater.kt" @'
 '@ @'
         "https://github.com/rnethula2689/MyKiddieTv/releases/download/apk-latest/latest_version.json"
 '@ "Updater version URL -> release asset"
+
+"== ChannelsActivity: quick Manage Kid Content + grouped Downloads (option B) =="
+Repl "$J\ChannelsActivity.kt" @'
+                    Row("🎬   Movies (VOD)", null) { showVodCategories() },
+                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
+'@ @'
+                    Row("🎬   Movies (VOD)", null) { showVodCategories() },
+                    Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) },
+                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
+'@ "ChannelsActivity Manage Kid Content home row"
+
+Repl "$J\ChannelsActivity.kt" @'
+startActivity(Intent(this, DownloadsActivity::class.java))
+'@ @'
+run { OfflineActivity.kidMode = false; startActivity(Intent(this, OfflineActivity::class.java)) }
+'@ "ChannelsActivity Downloads -> grouped OfflineActivity"
 
 if ($fail -gt 0) { "`nGRAFT INCOMPLETE: $fail anchor(s) missing — upstream changed; fix manually." }
 else { "`nGRAFT OK" }

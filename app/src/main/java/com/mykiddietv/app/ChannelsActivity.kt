@@ -333,7 +333,7 @@ class ChannelsActivity : AppCompatActivity() {
             Page(
                 "MyKiddieTv",
                 listOf(
-                    Row("⬇   Downloads (offline)", null) { startActivity(Intent(this, DownloadsActivity::class.java)) },
+                    Row("⬇   Downloads (offline)", null) { run { OfflineActivity.kidMode = false; startActivity(Intent(this, OfflineActivity::class.java)) } },
                     Row("🔄   Retry connection", null) { connectAndLoad() }
                 ),
                 kind = SearchKind.LOCAL
@@ -502,7 +502,7 @@ class ChannelsActivity : AppCompatActivity() {
                             android.widget.Toast.makeText(this, "Download started — see ⬇ Downloads.", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
-                    2 -> startActivity(Intent(this, DownloadsActivity::class.java))
+                    2 -> run { OfflineActivity.kidMode = false; startActivity(Intent(this, OfflineActivity::class.java)) }
                 }
             }
             .show()
@@ -582,7 +582,8 @@ class ChannelsActivity : AppCompatActivity() {
                 listOf(
                     Row("📺   Live TV", null) { showLiveGenres() },
                     Row("🎬   Movies (VOD)", null) { showVodCategories() },
-                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
+                    Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) },
+                    Row("⬇   Downloads", null) { run { OfflineActivity.kidMode = false; startActivity(Intent(this, OfflineActivity::class.java)) } }
                 ),
                 kind = SearchKind.GLOBAL,
                 rebuild = { showHome() }
