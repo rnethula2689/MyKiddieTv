@@ -18,7 +18,7 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:name=".ProfileActivity"
+            android:name=".ChannelsActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,18 +26,6 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".KidHomeActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".KidContentActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ChannelsActivity"
-            android:exported="false" />
 
         <activity
             android:name=".SettingsActivity"

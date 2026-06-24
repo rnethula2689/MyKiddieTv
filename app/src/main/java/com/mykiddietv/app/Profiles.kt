@@ -106,4 +106,44 @@ object Profiles {
         prefs(ctx).edit().putString("vod", arr.toString()).apply()
         dirty = true
     }
+
+    // ---- allowed individual episodes ----
+    /** Enough to display and later resolve a play URL via Portal.playEpisodeUrl(series, season, episode). */
+    data class KidEpisode(
+        val seriesId: String, val seriesName: String,
+        val seasonId: String, val episodeId: String,
+        val name: String, val poster: String
+    ) {
+        val key get() = "$seriesId|$seasonId|$episodeId"
+    }
+
+    fun allowedEpisodes(ctx: Context): MutableList<KidEpisode> {
+        val out = ArrayList<KidEpisode>()
+        try {
+            val arr = JSONArray(prefs(ctx).getString("episodes", "[]") ?: "[]")
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(KidEpisode(
+                    o.optString("seriesId"), o.optString("seriesName"),
+                    o.optString("seasonId"), o.optString("episodeId"),
+                    o.optString("name"), o.optString("poster")
+                ))
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    fun allowedEpisodeKeys(ctx: Context): Set<String> = allowedEpisodes(ctx).map { it.key }.toSet()
+
+    fun saveEpisodes(ctx: Context, list: List<KidEpisode>) {
+        val arr = JSONArray()
+        for (e in list) {
+            arr.put(JSONObject()
+                .put("seriesId", e.seriesId).put("seriesName", e.seriesName)
+                .put("seasonId", e.seasonId).put("episodeId", e.episodeId)
+                .put("name", e.name).put("poster", e.poster))
+        }
+        prefs(ctx).edit().putString("episodes", arr.toString()).apply()
+        dirty = true
+    }
 }

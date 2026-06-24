@@ -39,9 +39,11 @@ class KidContentActivity : AppCompatActivity() {
     // Pending picks (accumulate across folders until "Add selected").
     private val pendingChannels = LinkedHashMap<String, Portal.Channel>()
     private val pendingVod = LinkedHashMap<String, Portal.VodItem>()
-    // Already-saved ids, for the "✓ added" badge. Refreshed after each add.
+    private val pendingEpisodes = LinkedHashMap<String, Profiles.KidEpisode>()
+    // Already-saved ids/keys, for the "✓ added" badge. Refreshed after each add.
     private var savedChannelIds = setOf<String>()
     private var savedVodIds = setOf<String>()
+    private var savedEpisodeKeys = setOf<String>()
 
     private var allChannels = listOf<Portal.Channel>()
     private var genres = listOf<Portal.Genre>()
@@ -57,6 +59,7 @@ class KidContentActivity : AppCompatActivity() {
 
         savedChannelIds = Profiles.allowedChannelIds(this)
         savedVodIds = Profiles.allowedVodIds(this)
+        savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
 
         adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) })
         b.list.layoutManager = LinearLayoutManager(this)
@@ -104,11 +107,13 @@ class KidContentActivity : AppCompatActivity() {
     // ---- selection helpers ----
     private fun isChecked(n: KidNode): Boolean =
         (n.channel != null && pendingChannels.containsKey(n.channel.id)) ||
-            (n.vod != null && pendingVod.containsKey(n.vod.id))
+            (n.vod != null && pendingVod.containsKey(n.vod.id)) ||
+            (n.episode != null && pendingEpisodes.containsKey(n.episode.key))
 
     private fun toggle(n: KidNode) {
         n.channel?.let { if (pendingChannels.remove(it.id) == null) pendingChannels[it.id] = it }
         n.vod?.let { if (pendingVod.remove(it.id) == null) pendingVod[it.id] = it }
+        n.episode?.let { if (pendingEpisodes.remove(it.key) == null) pendingEpisodes[it.key] = it }
     }
 
     private fun onRowClick(pos: Int) {
@@ -120,7 +125,7 @@ class KidContentActivity : AppCompatActivity() {
         updateBottomBar()
     }
 
-    private fun pendingCount() = pendingChannels.size + pendingVod.size
+    private fun pendingCount() = pendingChannels.size + pendingVod.size + pendingEpisodes.size
 
     private fun updateBottomBar() {
         val picks = displayed.filter { it.isPick }
@@ -135,9 +140,17 @@ class KidContentActivity : AppCompatActivity() {
         if (picks.isEmpty()) return
         val allSelected = picks.all { isChecked(it) }
         if (allSelected) {
-            picks.forEach { it.channel?.let { c -> pendingChannels.remove(c.id) }; it.vod?.let { v -> pendingVod.remove(v.id) } }
+            picks.forEach {
+                it.channel?.let { c -> pendingChannels.remove(c.id) }
+                it.vod?.let { v -> pendingVod.remove(v.id) }
+                it.episode?.let { e -> pendingEpisodes.remove(e.key) }
+            }
         } else {
-            picks.forEach { it.channel?.let { c -> pendingChannels[c.id] = c }; it.vod?.let { v -> pendingVod[v.id] = v } }
+            picks.forEach {
+                it.channel?.let { c -> pendingChannels[c.id] = c }
+                it.vod?.let { v -> pendingVod[v.id] = v }
+                it.episode?.let { e -> pendingEpisodes[e.key] = e }
+            }
         }
         adapter.notifyDataSetChanged()
         updateBottomBar()
@@ -148,11 +161,13 @@ class KidContentActivity : AppCompatActivity() {
             b.status.text = "Tick some channels or movies first."
             return
         }
-        val names = (pendingChannels.values.map { it.name } + pendingVod.values.map { it.name })
+        val names = pendingChannels.values.map { it.name } +
+            pendingVod.values.map { it.name } +
+            pendingEpisodes.values.map { "${it.seriesName} — ${it.name}" }
         val preview = names.take(12).joinToString("\n") { "• $it" } +
             (if (names.size > 12) "\n…and ${names.size - 12} more" else "")
-        val msg = "Add ${pendingChannels.size} channel(s) and ${pendingVod.size} movie(s)/show(s) " +
-            "to ${Profiles.kidName(this)}'s list?\n\n$preview"
+        val msg = "Add ${pendingChannels.size} channel(s), ${pendingVod.size} movie(s)/show(s) " +
+            "and ${pendingEpisodes.size} episode(s) to ${Profiles.kidName(this)}'s list?\n\n$preview"
         AlertDialog.Builder(this)
             .setTitle("Confirm")
             .setMessage(msg)
@@ -171,10 +186,15 @@ class KidContentActivity : AppCompatActivity() {
         pendingVod.forEach { vod[it.key] = it.value }
         Profiles.saveVod(this, vod.values.toList())
 
+        val eps = Profiles.allowedEpisodes(this).associateBy { it.key }.toMutableMap()
+        pendingEpisodes.forEach { eps[it.key] = it.value }
+        Profiles.saveEpisodes(this, eps.values.toList())
+
         val added = pendingCount()
-        pendingChannels.clear(); pendingVod.clear()
+        pendingChannels.clear(); pendingVod.clear(); pendingEpisodes.clear()
         savedChannelIds = Profiles.allowedChannelIds(this)
         savedVodIds = Profiles.allowedVodIds(this)
+        savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
         b.status.text = "Added $added item(s) to ${Profiles.kidName(this)}'s list ✓"
         // Rebuild current view so badges/checkboxes refresh.
         backStack.lastOrNull()?.let { display(rebuildBadges(it)) }
@@ -186,6 +206,7 @@ class KidContentActivity : AppCompatActivity() {
             when {
                 n.channel != null -> n.copy(alreadyAdded = savedChannelIds.contains(n.channel.id))
                 n.vod != null -> n.copy(alreadyAdded = savedVodIds.contains(n.vod.id))
+                n.episode != null -> n.copy(alreadyAdded = savedEpisodeKeys.contains(n.episode.key))
                 else -> n
             }
         }
@@ -295,10 +316,50 @@ class KidContentActivity : AppCompatActivity() {
         ch.logoUrl, ch.name, channel = ch, alreadyAdded = savedChannelIds.contains(ch.id)
     )
 
-    private fun vodNode(v: Portal.VodItem) = KidNode(
-        (if (v.isSeries) "📁  " else "🎬  ") + v.name,
-        v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id)
-    )
+    // A movie is a pick; a series is a folder you drill into (seasons → episodes).
+    private fun vodNode(v: Portal.VodItem): KidNode =
+        if (v.isSeries)
+            KidNode("📁  ${v.name}", v.posterUrl, v.name, open = { showSeasons(v) })
+        else
+            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id))
+
+    private fun showSeasons(series: Portal.VodItem) {
+        b.status.text = "Loading ${series.name}…"
+        io.execute {
+            val seasons = Portal.seriesSeasons(series.id)
+            runOnUiThread {
+                b.status.text = ""
+                if (seasons.isEmpty()) { b.status.text = "No seasons found for ${series.name}."; return@runOnUiThread }
+                push(Page(series.name, seasons.reversed().map { s ->
+                    KidNode(s.name, null, s.name, open = { showEpisodes(series, s) })
+                }, Kind.FOLDERS))
+            }
+        }
+    }
+
+    private fun showEpisodes(series: Portal.VodItem, season: Portal.Season) {
+        b.status.text = "Loading ${season.name}…"
+        io.execute {
+            val eps = Portal.seriesEpisodes(series.id, season.id)
+            runOnUiThread {
+                b.status.text = ""
+                if (eps.isEmpty()) { b.status.text = "No episodes found."; return@runOnUiThread }
+                push(Page("${series.name} — ${season.name}", eps.reversed().map { e ->
+                    episodeNode(series, season, e)
+                }, Kind.FOLDERS))
+            }
+        }
+    }
+
+    private fun episodeNode(series: Portal.VodItem, season: Portal.Season, e: Portal.Episode): KidNode {
+        val ep = Profiles.KidEpisode(
+            seriesId = series.id, seriesName = series.name,
+            seasonId = season.id, episodeId = e.id,
+            name = e.name, poster = series.posterUrl
+        )
+        return KidNode("🎬  ${e.name}", series.posterUrl, e.name, episode = ep,
+            alreadyAdded = savedEpisodeKeys.contains(ep.key))
+    }
 
     // ---- search ----
     private fun toggleSearch() {

@@ -18,10 +18,11 @@ data class KidNode(
     val sortKey: String,
     val channel: Portal.Channel? = null,
     val vod: Portal.VodItem? = null,
+    val episode: Profiles.KidEpisode? = null,
     val alreadyAdded: Boolean = false,
     val open: (() -> Unit)? = null
 ) {
-    val pickId: String? get() = channel?.id ?: vod?.id
+    val pickId: String? get() = channel?.id ?: vod?.id ?: episode?.key
     val isPick: Boolean get() = pickId != null
 }
 

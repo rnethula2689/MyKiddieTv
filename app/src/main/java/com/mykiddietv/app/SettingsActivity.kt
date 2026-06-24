@@ -52,10 +52,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         Profiles.setNames(this, parent, kid)
         Profiles.setPasscode(this, code)
-        b.profileMsg.text = when {
-            code.isEmpty() -> "Saved. ⚠ No passcode set — anyone can open the Parent profile."
-            else -> "Saved ✓  Parent passcode is set."
-        }
+        b.profileMsg.text = if (code.isEmpty())
+            "Saved. ⚠ No passcode set — anyone can open the Parent profile."
+        else "Saved ✓  Parent passcode is set."
     }
 
     private fun refreshList() {

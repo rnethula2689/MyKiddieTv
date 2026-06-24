@@ -19,7 +19,7 @@ import java.util.concurrent.Executors
 class LiveVlcActivity : AppCompatActivity() {
     companion object {
         var liveChannels: List<Portal.Channel> = emptyList()
-        // Set by the launching screen; hides parent-only menu items (Settings, App updates) for kids.
+        // Set by the launching screen; hides parent-only menu items for kids.
         var kidMode: Boolean = false
     }
 
