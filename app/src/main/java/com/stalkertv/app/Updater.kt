@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
 /** Checks the published version file so sideloaded users get notified of new builds. */
 object Updater {
     private const val URL =
-        "https://raw.githubusercontent.com/rnethula2689/stalker-tv/main/latest_version.json"
+        "https://raw.githubusercontent.com/rnethula2689/MyKiddieTv/main/latest_version.json"
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -29,7 +29,7 @@ object Updater {
     }
 
     private const val APK_URL =
-        "https://github.com/rnethula2689/stalker-tv/releases/download/apk-latest/app-debug.apk"
+        "https://github.com/rnethula2689/MyKiddieTv/releases/download/apk-latest/app-debug.apk"
 
     /** Downloads the latest APK to [dest]. @return true on success. */
     fun downloadApk(dest: File): Boolean {
