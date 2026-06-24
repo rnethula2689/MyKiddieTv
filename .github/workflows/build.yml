@@ -29,6 +29,11 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: Stamp unique build number (so each APK is distinguishable & installable over the last)
+        run: |
+          sed -i "s/versionCode = 1$/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
+          grep -E "versionCode|versionName" app/build.gradle.kts
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
