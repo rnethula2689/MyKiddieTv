@@ -3,6 +3,11 @@ package com.mykiddietv.app
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -12,29 +17,35 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Offline downloads for movies / episodes. Handles both a single progressive file (mp4/mkv/mpg)
- * and HLS (.m3u8) — for HLS it downloads every segment + key into a folder and writes a local
- * playlist so it plays back with no network.
+ * Offline downloads with pause / resume, driven by WorkManager so they continue in the background
+ * and resume automatically when the network returns (even if the app was closed). Progressive files
+ * resume via HTTP Range; HLS resumes by skipping segments already on disk. Partial data on disk is
+ * the source of truth for progress, and the [Item.source] descriptor lets a download be re-resolved.
  */
 object Downloads {
     const val DONE = "done"
     const val DOWNLOADING = "downloading"
+    const val PAUSED = "paused"
     const val ERROR = "error"
+    const val QUEUED = "queued"
+
+    enum class Outcome { DONE, NETWORK, USER_PAUSED, ERROR, SKIP }
 
     data class Item(
-        val id: String, val title: String, val poster: String,
-        var fileName: String, var status: String, var total: Long, var done: Long, var hls: Boolean = false
+        val id: String, val title: String, val poster: String, val source: String,
+        var fileName: String, var status: String, var total: Long, var done: Long,
+        var hls: Boolean = false, var userPaused: Boolean = false
     )
 
     interface Listener { fun onDownloadsChanged() }
-    @Volatile private var listener: Listener? = null
-    fun setListener(l: Listener?) { listener = l }
+    private val listeners = java.util.concurrent.CopyOnWriteArraySet<Listener>()
+    fun addListener(l: Listener) { listeners.add(l) }
+    fun removeListener(l: Listener) { listeners.remove(l) }
     private val ui = Handler(Looper.getMainLooper())
-    private fun notifyChanged() { ui.post { listener?.onDownloadsChanged() } }
+    private fun notifyChanged() { ui.post { for (l in listeners) l.onDownloadsChanged() } }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(25, TimeUnit.SECONDS)
@@ -42,7 +53,22 @@ object Downloads {
         .build()
 
     private val active = ConcurrentHashMap<String, Item>()
-    private val exec = Executors.newSingleThreadExecutor() // one download at a time
+    private val pauseFlags = ConcurrentHashMap<String, Boolean>()
+    private val cancelled = java.util.Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
+    @Volatile private var currentId: String? = null
+    @Volatile private var progressReporter: ((Item) -> Unit)? = null
+
+    private class PausedException : Exception()
+    private class CancelledException : Exception()
+
+    fun activeCount(): Int = active.size
+
+    data class NotifInfo(val title: String, val percent: Int, val count: Int)
+    fun notifInfo(): NotifInfo {
+        val cur = currentId?.let { active[it] } ?: active.values.firstOrNull()
+        val pct = if (cur != null && cur.total > 0) (cur.done * 100 / cur.total).toInt() else 0
+        return NotifInfo(cur?.title ?: "Downloading", pct.coerceIn(0, 100), active.size)
+    }
 
     fun dir(ctx: Context): File {
         val d = File(ctx.getExternalFilesDir(null), "downloads")
@@ -62,9 +88,9 @@ object Downloads {
                 val o = arr.getJSONObject(i)
                 out.add(
                     Item(
-                        o.optString("id"), o.optString("title"), o.optString("poster"),
+                        o.optString("id"), o.optString("title"), o.optString("poster"), o.optString("source"),
                         o.optString("fileName"), o.optString("status"),
-                        o.optLong("total"), o.optLong("done"), o.optBoolean("hls", false)
+                        o.optLong("total"), o.optLong("done"), o.optBoolean("hls", false), o.optBoolean("userPaused", false)
                     )
                 )
             }
@@ -72,14 +98,15 @@ object Downloads {
         return out
     }
 
+    @Synchronized
     private fun writeIndex(ctx: Context, items: List<Item>) {
         try {
             val arr = JSONArray()
             for (it in items) {
                 arr.put(
-                    JSONObject().put("id", it.id).put("title", it.title).put("poster", it.poster)
+                    JSONObject().put("id", it.id).put("title", it.title).put("poster", it.poster).put("source", it.source)
                         .put("fileName", it.fileName).put("status", it.status)
-                        .put("total", it.total).put("done", it.done).put("hls", it.hls)
+                        .put("total", it.total).put("done", it.done).put("hls", it.hls).put("userPaused", it.userPaused)
                 )
             }
             indexFile(ctx).writeText(arr.toString())
@@ -88,31 +115,16 @@ object Downloads {
 
     fun list(ctx: Context): List<Item> {
         val items = readIndex(ctx)
-        var changed = false
-        for (i in items.indices) {
-            val live = active[items[i].id]
-            if (live != null) items[i] = live
-            else if (items[i].status == DOWNLOADING) { items[i].status = ERROR; changed = true } // app killed mid-download
-        }
-        if (changed) writeIndex(ctx, items)
+        for (i in items.indices) active[items[i].id]?.let { items[i] = it }
         return items.reversed()
     }
 
     fun fileFor(ctx: Context, item: Item): File = File(dir(ctx), item.fileName)
 
-    fun delete(ctx: Context, id: String) {
-        val items = readIndex(ctx)
-        File(dir(ctx), "$id.part").delete()
-        File(dir(ctx), id).deleteRecursively() // HLS folder, if any
-        items.firstOrNull { it.id == id }?.let { File(dir(ctx), it.fileName).delete() }
-        writeIndex(ctx, items.filterNot { it.id == id })
-        active.remove(id)
-        notifyChanged()
-    }
-
     fun has(ctx: Context, id: String): Boolean =
         active.containsKey(id) || readIndex(ctx).any { it.id == id && it.status == DONE }
 
+    @Synchronized
     private fun upsert(ctx: Context, item: Item) {
         val items = readIndex(ctx)
         items.removeAll { it.id == item.id }
@@ -120,65 +132,167 @@ object Downloads {
         writeIndex(ctx, items)
     }
 
-    private fun finish(ctx: Context, item: Item, status: String) {
-        item.status = status
-        active.remove(item.id)
-        upsert(ctx, item)
+    fun resolveSource(src: String): String? {
+        val p = src.split("|")
+        return when (p.getOrNull(0)) {
+            "vod" -> Portal.playVodUrl(p.getOrElse(1) { "" }, p.getOrElse(2) { "" })
+            "ep" -> Portal.playEpisodeUrl(p.getOrElse(1) { "" }, p.getOrElse(2) { "" }, p.getOrElse(3) { "" })
+            "url" -> p.getOrElse(1) { "" }
+            else -> null
+        }
+    }
+
+    fun delete(ctx: Context, id: String) {
+        cancelled.add(id)
+        active.remove(id)
+        val items = readIndex(ctx)
+        File(dir(ctx), "$id.part").delete()
+        File(dir(ctx), id).deleteRecursively()
+        items.firstOrNull { it.id == id }?.let { File(dir(ctx), it.fileName).delete() }
+        writeIndex(ctx, items.filterNot { it.id == id })
         notifyChanged()
     }
 
-    fun enqueue(ctx: Context, id: String, title: String, poster: String, resolve: () -> String?) {
-        if (has(ctx, id)) return
-        val item = Item(id, title, poster, "$id.mp4", DOWNLOADING, 0, 0)
-        active[id] = item
-        upsert(ctx, item)
-        notifyChanged()
-        exec.execute {
-            try {
-                val url = resolve() ?: throw IOException("no stream")
-                if (isHlsUrl(url)) downloadHls(ctx, item, url)
-                else downloadProgressive(ctx, item, url)
-            } catch (e: Exception) {
-                finish(ctx, item, ERROR)
-            }
+    fun pause(ctx: Context, id: String) {
+        if (currentId == id) {
+            pauseFlags[id] = true // running → worker stops at the next checkpoint
+        } else {
+            val items = readIndex(ctx)
+            items.firstOrNull { it.id == id }?.let { it.status = PAUSED; it.userPaused = true }
+            writeIndex(ctx, items)
+            notifyChanged()
         }
+    }
+
+    fun resume(ctx: Context, id: String) {
+        val items = readIndex(ctx)
+        val it = items.firstOrNull { it.id == id } ?: return
+        if (it.status == DONE || it.status == DOWNLOADING) return
+        it.status = QUEUED
+        it.userPaused = false
+        writeIndex(ctx, items)
+        notifyChanged()
+        scheduleWork(ctx)
+    }
+
+    /** Kick the worker so it picks up anything pending (used as auto-resume trigger too). */
+    fun resumeAllAuto(ctx: Context) = scheduleWork(ctx)
+
+    fun enqueue(ctx: Context, id: String, title: String, poster: String, source: String) {
+        if (has(ctx, id)) return
+        upsert(ctx, Item(id, title, poster, source, "$id.mp4", QUEUED, 0, 0))
+        notifyChanged()
+        scheduleWork(ctx)
+    }
+
+    fun scheduleWork(ctx: Context) {
+        val req = OneTimeWorkRequestBuilder<DownloadWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        WorkManager.getInstance(ctx.applicationContext)
+            .enqueueUniqueWork("downloads", ExistingWorkPolicy.KEEP, req)
+    }
+
+    // ---- worker engine ----
+    /** Next item the worker should process: freshly queued, or paused by an outage (not by the user). */
+    fun nextPendingItem(ctx: Context): Item? {
+        // Treat a download left "downloading" by an app-kill as resumable.
+        val items = readIndex(ctx)
+        var changed = false
+        for (it in items) if (it.status == DOWNLOADING && !active.containsKey(it.id)) {
+            it.status = PAUSED; it.userPaused = false; changed = true
+        }
+        if (changed) writeIndex(ctx, items)
+        return items.firstOrNull { it.status == QUEUED || (it.status == PAUSED && !it.userPaused) }
+    }
+
+    private fun report(item: Item) { progressReporter?.invoke(item); notifyChanged() }
+
+    /** Run one item to completion / pause / error. Called by [DownloadWorker]. */
+    fun runItem(ctx: Context, item: Item, onProgress: (Item) -> Unit): Outcome {
+        cancelled.remove(item.id)
+        pauseFlags.remove(item.id)
+        item.status = DOWNLOADING
+        item.userPaused = false
+        active[item.id] = item
+        currentId = item.id
+        progressReporter = onProgress
+        upsert(ctx, item)
+        report(item)
+        try {
+            if (cancelled.contains(item.id)) throw CancelledException()
+            val url = resolveSource(item.source) ?: throw IOException("no stream")
+            if (isHlsUrl(url) || item.hls) downloadHls(ctx, item, url) else downloadProgressive(ctx, item, url)
+            item.status = DONE
+            upsert(ctx, item)
+            return Outcome.DONE
+        } catch (e: CancelledException) {
+            return Outcome.SKIP // already removed by delete()
+        } catch (e: PausedException) {
+            item.status = PAUSED; item.userPaused = true
+            upsert(ctx, item)
+            return Outcome.USER_PAUSED
+        } catch (e: Exception) {
+            if (hasPartial(ctx, item)) {
+                item.status = PAUSED; item.userPaused = false; upsert(ctx, item); return Outcome.NETWORK
+            }
+            item.status = ERROR; upsert(ctx, item); return Outcome.ERROR
+        } finally {
+            active.remove(item.id)
+            currentId = null
+            pauseFlags.remove(item.id)
+            progressReporter = null
+            notifyChanged()
+        }
+    }
+
+    private fun checkpoint(id: String) {
+        if (cancelled.contains(id)) throw CancelledException()
+        if (pauseFlags[id] == true) throw PausedException()
+    }
+
+    private fun hasPartial(ctx: Context, item: Item): Boolean {
+        if (File(dir(ctx), "${item.id}.part").length() > 0) return true
+        val folder = File(dir(ctx), item.id)
+        return folder.isDirectory && (folder.listFiles()?.any { it.name.startsWith("seg") } == true)
     }
 
     private fun isHlsUrl(url: String) = url.substringBefore('?').endsWith(".m3u8", true)
 
-    // ---- progressive (single file) ----
+    // ---- progressive (resumable via Range) ----
     private fun downloadProgressive(ctx: Context, item: Item, url: String) {
-        val req = Request.Builder().url(url).header("User-Agent", Portal.UA).build()
-        client.newCall(req).execute().use { resp ->
+        val part = File(dir(ctx), "${item.id}.part")
+        val have = if (part.exists()) part.length() else 0L
+        val reqB = Request.Builder().url(url).header("User-Agent", Portal.UA)
+        if (have > 0) reqB.header("Range", "bytes=$have-")
+        client.newCall(reqB.build()).execute().use { resp ->
             val body = resp.body ?: throw IOException("empty body")
             val ct = resp.header("Content-Type") ?: ""
-            if (ct.contains("mpegurl", true)) { // server says it's actually HLS
-                resp.close()
-                downloadHls(ctx, item, url)
-                return
-            }
-            item.total = body.contentLength()
-            val part = File(dir(ctx), "${item.id}.part")
-            body.byteStream().use { input ->
-                FileOutputStream(part).use { out ->
+            if (ct.contains("mpegurl", true)) { resp.close(); item.hls = true; downloadHls(ctx, item, url); return }
+            val append = have > 0 && resp.code == 206
+            if (have > 0 && resp.code != 206) part.delete()
+            val base = if (append) have else 0L
+            item.total = base + body.contentLength()
+            item.done = base
+            FileOutputStream(part, append).use { out ->
+                body.byteStream().use { input ->
                     val buf = ByteArray(128 * 1024)
                     var n: Int
-                    var lastPersist = 0L
+                    var lastNotify = base
                     while (input.read(buf).also { n = it } > 0) {
-                        if (!active.containsKey(item.id)) throw IOException("cancelled")
+                        checkpoint(item.id)
                         out.write(buf, 0, n)
                         item.done += n
-                        if (item.done - lastPersist > 2_000_000) { lastPersist = item.done; notifyChanged() }
+                        if (item.done - lastNotify > 2_000_000) { lastNotify = item.done; report(item) }
                     }
                 }
             }
             val finalFile = File(dir(ctx), item.fileName)
             if (!part.renameTo(finalFile)) throw IOException("rename failed")
-            finish(ctx, item, DONE)
         }
     }
 
-    // ---- HLS (playlist + segments) ----
+    // ---- HLS (resumes by skipping segments already on disk) ----
     private fun httpText(url: String): String {
         val req = Request.Builder().url(url).header("User-Agent", Portal.UA).build()
         client.newCall(req).execute().use { r ->
@@ -204,7 +318,6 @@ object Downloads {
     private fun downloadHls(ctx: Context, item: Item, firstUrl: String) {
         var playlistUrl = firstUrl
         var text = httpText(playlistUrl)
-        // Master playlist → pick the highest-bandwidth variant.
         if (text.contains("#EXT-X-STREAM-INF")) {
             val lines = text.lines()
             var bestBw = -1
@@ -224,9 +337,7 @@ object Downloads {
         folder.mkdirs()
         val lines = text.lines()
         item.total = lines.count { it.isNotBlank() && !it.startsWith("#") }.toLong()
-        item.done = 0
         item.hls = true
-        notifyChanged()
         val out = ArrayList<String>()
         var keyIdx = 0; var mapIdx = 0; var segIdx = 0
         for (raw in lines) {
@@ -236,7 +347,8 @@ object Downloads {
                     val u = uriIn(line)
                     if (u != null && !u.startsWith("data:")) {
                         val name = "key$keyIdx.key"; keyIdx++
-                        httpToFile(resolveRef(playlistUrl, u), File(folder, name))
+                        val kf = File(folder, name)
+                        if (!(kf.exists() && kf.length() > 0)) httpToFile(resolveRef(playlistUrl, u), kf)
                         out.add(line.replace(u, name))
                     } else out.add(line)
                 }
@@ -244,25 +356,27 @@ object Downloads {
                     val u = uriIn(line)
                     if (u != null) {
                         val name = "map$mapIdx.bin"; mapIdx++
-                        httpToFile(resolveRef(playlistUrl, u), File(folder, name))
+                        val mf = File(folder, name)
+                        if (!(mf.exists() && mf.length() > 0)) httpToFile(resolveRef(playlistUrl, u), mf)
                         out.add(line.replace(u, name))
                     } else out.add(line)
                 }
                 line.isEmpty() || line.startsWith("#") -> out.add(raw)
                 else -> {
-                    if (!active.containsKey(item.id)) throw IOException("cancelled")
+                    checkpoint(item.id)
                     val ext = if (line.substringBefore('?').endsWith(".m4s", true)) "m4s" else "ts"
-                    val name = "seg$segIdx.$ext"; segIdx++
-                    httpToFile(resolveRef(playlistUrl, line), File(folder, name))
+                    val name = "seg$segIdx.$ext"
+                    val sf = File(folder, name)
+                    if (!(sf.exists() && sf.length() > 0)) httpToFile(resolveRef(playlistUrl, line), sf)
                     out.add(name)
+                    segIdx++
                     item.done = segIdx.toLong()
-                    notifyChanged()
+                    report(item)
                 }
             }
         }
         if (segIdx == 0) throw IOException("no segments")
         File(folder, "index.m3u8").writeText(out.joinToString("\n"))
         item.fileName = "${item.id}/index.m3u8"
-        finish(ctx, item, DONE)
     }
 }

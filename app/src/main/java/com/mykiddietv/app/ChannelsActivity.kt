@@ -56,8 +56,18 @@ class ChannelsActivity : AppCompatActivity() {
         b.menuBtn.setOnClickListener { showMenu() }
 
         registerForegroundWatch()
+        maybeRequestNotifications()
         connectAndLoad()
         checkForUpdate()
+    }
+
+    /** Ask for notification permission (Android 13+) so background download progress is visible. */
+    private fun maybeRequestNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            try { requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 77) } catch (_: Exception) {}
+        }
     }
 
     private var lifecycleCb: android.app.Application.ActivityLifecycleCallbacks? = null
@@ -279,6 +289,46 @@ class ChannelsActivity : AppCompatActivity() {
         b.loadingOverlay.visibility = View.GONE
     }
 
+    private val netMsg =
+        "No network connection — you can only watch offline Downloads. Please check your Wi-Fi."
+
+    private fun isOnline(): Boolean = try {
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } else {
+            @Suppress("DEPRECATION") (cm.activeNetworkInfo?.isConnected == true)
+        }
+    } catch (_: Exception) { false }
+
+    /** Show the network message briefly on the splash, then land on an offline home. */
+    private fun goOffline() {
+        showLoading(netMsg)
+        setProgress(100, netMsg, 400)
+        b.loadingMsg.text = netMsg
+        b.loadingOverlay.postDelayed({ showOfflineHome() }, 1500)
+    }
+
+    /** Home shown when there's no portal connection: Downloads (works offline) + Retry. */
+    private fun showOfflineHome() {
+        hideLoading()
+        backStack.clear()
+        b.title.text = "MyKiddieTv"
+        b.status.visibility = View.VISIBLE
+        b.status.text = "📡  $netMsg"
+        push(
+            Page(
+                "MyKiddieTv",
+                listOf(
+                    Row("⬇   Downloads (offline)", null) { startActivity(Intent(this, DownloadsActivity::class.java)) },
+                    Row("🔄   Retry connection", null) { connectAndLoad() }
+                ),
+                kind = SearchKind.LOCAL
+            )
+        )
+    }
+
     /** Read the active provider, connect in the background, then show the home menu. */
     private fun connectAndLoad() {
         parentalUnlocked = false // a fresh portal load re-locks restricted folders
@@ -298,16 +348,13 @@ class ChannelsActivity : AppCompatActivity() {
         Portal.portalUrl = acct.portal
         Portal.mac = acct.mac
         Portal.sn = acct.sn
+        if (!isOnline()) { goOffline(); return } // no network → straight to offline home
         showLoading("Connecting to portal…")
         setProgress(40, "Connecting to portal…", 2200) // creep up while the handshake runs
         io.execute {
             val err = Portal.connect() // resets the session and re-handshakes → a true fresh load
             if (err != null) {
-                runOnUiThread {
-                    hideLoading()
-                    b.status.visibility = View.VISIBLE
-                    b.status.text = err
-                }
+                runOnUiThread { goOffline() } // can't reach the portal → offline home with Downloads
                 return@execute
             }
             runOnUiThread { setProgress(65, "Authenticated ✓   Loading channels…", 700) }
@@ -418,22 +465,22 @@ class ChannelsActivity : AppCompatActivity() {
         val label = (if (v.isSeries) "📁  " else "🎬  ") + v.name
         return Row(label, v.posterUrl, sortKey = v.name) {
             if (v.isSeries) showSeasons(v)
-            else mediaActions(v.name, v.posterUrl, "movie_${v.id}") { Portal.playVodUrl(v.id, v.cmd) }
+            else mediaActions(v.name, v.posterUrl, "movie_${v.id}", "vod|${v.id}|${v.cmd}")
         }
     }
 
-    /** Movie / episode action sheet: play now, or download for offline. */
-    private fun mediaActions(title: String, poster: String?, id: String, resolve: () -> String?) {
+    /** Movie / episode action sheet: play now, or download for offline. [source] lets a download resume later. */
+    private fun mediaActions(title: String, poster: String?, id: String, source: String) {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(title)
             .setItems(arrayOf("▶  Play", "⬇  Download for offline", "📂  Go to Downloads")) { _, w ->
                 when (w) {
-                    0 -> play(title, resolve)
+                    0 -> play(title) { Downloads.resolveSource(source) }
                     1 -> {
                         if (Downloads.has(applicationContext, id)) {
                             android.widget.Toast.makeText(this, "Already saved (or downloading). See Downloads.", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
-                            Downloads.enqueue(applicationContext, id, title, poster ?: "", resolve)
+                            Downloads.enqueue(applicationContext, id, title, poster ?: "", source)
                             android.widget.Toast.makeText(this, "Download started — see ⬇ Downloads.", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
@@ -719,8 +766,9 @@ class ChannelsActivity : AppCompatActivity() {
                         mediaActions(
                             "${series.name}  /  ${season.name}  /  ${e.name}",
                             series.posterUrl,
-                            "ep_${series.id}_${season.id}_${e.id}"
-                        ) { Portal.playEpisodeUrl(series.id, season.id, e.id) }
+                            "ep_${series.id}_${season.id}_${e.id}",
+                            "ep|${series.id}|${season.id}|${e.id}"
+                        )
                     }
                 }))
             }

@@ -79,4 +79,6 @@ dependencies {
     implementation("io.github.anilbeesetti:nextlib-media3ext:1.7.1-0.9.0")
     // libVLC — robust engine for live IPTV (handles any codec/protocol ExoPlayer can't).
     implementation("org.videolan.android:libvlc-all:3.7.4")
+    // WorkManager — background downloads that resume automatically when the network returns.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }
