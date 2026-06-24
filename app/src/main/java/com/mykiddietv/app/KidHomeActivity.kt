@@ -25,9 +25,7 @@ class KidHomeActivity : AppCompatActivity() {
         b.greeting.text = "Hi ${Profiles.kidName(this)}! 👋"
 
         b.liveBtn.setOnClickListener { openLive() }
-        b.moviesBtn.setOnClickListener {
-            Toast.makeText(this, "Movies are coming soon!", Toast.LENGTH_SHORT).show()
-        }
+        b.moviesBtn.setOnClickListener { startActivity(Intent(this, KidMoviesActivity::class.java)) }
 
         connectPortal()
     }

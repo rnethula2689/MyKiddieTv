@@ -716,6 +716,7 @@ class ChannelsActivity : AppCompatActivity() {
                     else "Couldn't open “$title” — $why"
                 } else {
                     b.status.visibility = View.GONE
+                    PlayerActivity.kidMode = false
                     startActivity(
                         Intent(this, PlayerActivity::class.java)
                             .putExtra("url", url)
