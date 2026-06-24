@@ -54,7 +54,7 @@ class ChannelsActivity : AppCompatActivity() {
         b.menuBtn.setOnClickListener { showMenu() }
 
         connectAndLoad()
-        // Self-update disabled in this fork (the published feed belongs to the original app).
+        checkForUpdate()
     }
 
     private fun checkForUpdate() {
@@ -222,6 +222,33 @@ class ChannelsActivity : AppCompatActivity() {
         }
     }
 
+    private var progressAnim: android.animation.ObjectAnimator? = null
+
+    private fun showLoading(msg: String) {
+        progressAnim?.cancel()
+        b.loadingBar.progress = 0
+        b.loadingPct.text = "0%"
+        b.loadingMsg.text = msg
+        b.loadingOverlay.visibility = View.VISIBLE
+    }
+
+    /** Animate the bar and the counting % toward [pct] while showing [msg]. */
+    private fun setProgress(pct: Int, msg: String, durationMs: Long = 600) {
+        b.loadingMsg.text = msg
+        progressAnim?.cancel()
+        val anim = android.animation.ObjectAnimator.ofInt(b.loadingBar, "progress", b.loadingBar.progress, pct)
+        anim.duration = durationMs
+        anim.interpolator = android.view.animation.DecelerateInterpolator()
+        anim.addUpdateListener { va -> b.loadingPct.text = "${va.animatedValue}%" }
+        progressAnim = anim
+        anim.start()
+    }
+
+    private fun hideLoading() {
+        progressAnim?.cancel()
+        b.loadingOverlay.visibility = View.GONE
+    }
+
     /** Read the active provider, connect in the background, then show the home menu. */
     private fun connectAndLoad() {
         val acct = Configs.active(this)
@@ -229,7 +256,9 @@ class ChannelsActivity : AppCompatActivity() {
         b.search.setText("")
         backStack.clear()
         adapter.submit(emptyList())
+        b.status.visibility = View.GONE
         if (acct == null) {
+            hideLoading()
             b.status.visibility = View.VISIBLE
             b.status.text = "Welcome! Open Settings (⚙ top-right) to add your IPTV provider."
             showWelcome()
@@ -238,29 +267,33 @@ class ChannelsActivity : AppCompatActivity() {
         Portal.portalUrl = acct.portal
         Portal.mac = acct.mac
         Portal.sn = acct.sn
-        b.status.visibility = View.VISIBLE
-        b.status.text = "Loading ${acct.name}…"
+        showLoading("Connecting to portal…")
+        setProgress(40, "Connecting to portal…", 2200) // creep up while the handshake runs
         io.execute {
-            val err = Portal.connect()
+            val err = Portal.connect() // resets the session and re-handshakes → a true fresh load
             if (err != null) {
                 runOnUiThread {
+                    hideLoading()
                     b.status.visibility = View.VISIBLE
                     b.status.text = err
                 }
                 return@execute
             }
+            runOnUiThread { setProgress(65, "Authenticated ✓   Loading channels…", 700) }
             val ch = Portal.liveChannels()
+            runOnUiThread { setProgress(88, "Loading categories…", 700) }
             val g = Portal.liveGenres()
             runOnUiThread {
                 allChannels = ch
                 genres = g
                 byGenre = ch.groupBy { it.genreId }
                 if (ch.isEmpty()) {
+                    hideLoading()
                     b.status.visibility = View.VISIBLE
                     b.status.text = "No channels returned. Check the configuration (⚙)."
                 } else {
-                    b.status.visibility = View.GONE
-                    showHome()
+                    setProgress(100, "Ready", 350)
+                    b.loadingOverlay.postDelayed({ hideLoading(); showHome() }, 450)
                 }
             }
         }
@@ -530,7 +563,6 @@ class ChannelsActivity : AppCompatActivity() {
                     else "Couldn't open “$title” — $why"
                 } else {
                     b.status.visibility = View.GONE
-                    PlayerActivity.kidMode = false
                     startActivity(
                         Intent(this, PlayerActivity::class.java)
                             .putExtra("url", url)

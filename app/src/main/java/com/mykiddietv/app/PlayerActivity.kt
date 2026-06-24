@@ -37,8 +37,6 @@ class PlayerActivity : AppCompatActivity() {
 
     companion object {
         var liveChannels: List<Portal.Channel> = emptyList()
-        // Set by the launching screen; hides parent-only menu items (Settings, App updates) for kids.
-        var kidMode: Boolean = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -163,20 +161,15 @@ class PlayerActivity : AppCompatActivity() {
     private var menuDialog: AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
-        // Kid mode strips Settings / App updates so only safe actions remain.
-        val items = if (kidMode)
-            arrayOf("💬   Subtitles", "ℹ️   About", "✖   Exit")
-        else
-            arrayOf("💬   Subtitles", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+        val items = arrayOf("💬   Subtitles", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
-                val action = items[which]
-                when {
-                    action.contains("Subtitles") -> searchSubtitles()
-                    action.contains("Settings") -> startActivity(android.content.Intent(this, SettingsActivity::class.java))
-                    action.contains("App updates") -> startActivity(android.content.Intent(this, AppUpdatesActivity::class.java))
-                    action.contains("About") -> About.show(this)
-                    action.contains("Exit") -> finishAffinity()
+                when (which) {
+                    0 -> searchSubtitles()
+                    1 -> startActivity(android.content.Intent(this, SettingsActivity::class.java))
+                    2 -> startActivity(android.content.Intent(this, AppUpdatesActivity::class.java))
+                    3 -> About.show(this)
+                    4 -> finishAffinity()
                 }
             }
             .setOnDismissListener { menuDialog = null }

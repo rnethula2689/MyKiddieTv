@@ -9,7 +9,7 @@ object About {
             "Version:   ${BuildConfig.VERSION_NAME}  (build ${BuildConfig.VERSION_CODE})\n" +
             "Built:   ${BuildConfig.BUILD_TIME}\n\n" +
             "Developer:   RN\n" +
-            "Updates:   is.gd/MyKiddieTvfiretv"
+            "Updates:   is.gd/mykiddietv"
         AlertDialog.Builder(ctx)
             .setTitle("About")
             .setMessage(msg)

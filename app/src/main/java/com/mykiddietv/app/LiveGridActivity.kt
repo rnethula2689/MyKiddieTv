@@ -2,24 +2,20 @@ package com.mykiddietv.app
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.inputmethod.InputMethodManager
-import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
-import androidx.media3.common.MediaItem
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.mykiddietv.app.databinding.ActivityLivegridBinding
-import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
+import org.videolan.libvlc.LibVLC
+import org.videolan.libvlc.Media
+import org.videolan.libvlc.MediaPlayer
 import java.util.concurrent.Executors
 
-@OptIn(UnstableApi::class)
+/** Split-screen live TV: channel list on the left, libVLC preview + EPG on the right. */
 class LiveGridActivity : AppCompatActivity() {
     companion object {
         var channels: List<Portal.Channel> = emptyList()
@@ -33,16 +29,15 @@ class LiveGridActivity : AppCompatActivity() {
     private lateinit var b: ActivityLivegridBinding
     private lateinit var adapter: ChannelGridAdapter
 
-    private var player: ExoPlayer? = null
+    private var libVlc: LibVLC? = null
+    private var mp: MediaPlayer? = null
     private var all = listOf<Portal.Channel>()
     private var current: Portal.Channel? = null
     private var currentUrl: String? = null
     private var currentUrlId: String? = null
     private var pendingPreview: Runnable? = null
     private var seq = 0
-    private var retried = false
-    // On a playback error, retry once with FFmpeg software decoders forced (HEVC 10-bit, DTS, etc.).
-    private var forceSoftware = false
+    private var attached = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,11 +47,11 @@ class LiveGridActivity : AppCompatActivity() {
         all = channels
         b.title.text = gridTitle
 
-        val p = buildPlayer()
-        player = p
-        b.preview.player = p
+        val vlc = LibVLC(this, arrayListOf("--network-caching=1500", "--http-reconnect", "--no-drop-late-frames", "--no-skip-frames"))
+        libVlc = vlc
+        mp = MediaPlayer(vlc) // attached to the surface in onStart (and re-attached on return from fullscreen)
 
-        adapter = ChannelGridAdapter(all) { ch -> activate(ch) }
+        adapter = ChannelGridAdapter(all, { ch -> activate(ch) }, { ch -> select(ch) })
         b.list.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
         b.list.adapter = adapter
 
@@ -73,36 +68,11 @@ class LiveGridActivity : AppCompatActivity() {
 
         if (all.isNotEmpty()) {
             b.epg.text = "Loading…"
-            select(all[0])
+            current = all[0] // onStart starts the preview (and restarts it when returning from fullscreen)
             b.list.post { b.list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
         } else {
             b.epg.text = "No channels."
         }
-    }
-
-    private fun buildPlayer(): ExoPlayer {
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(Portal.UA).setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(20000).setReadTimeoutMs(20000)
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(15000, 50000, 1200, 2500).build()
-        val mode = if (forceSoftware)
-            androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
-        else
-            androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
-        val renderers = NextRenderersFactory(this)
-            .setExtensionRendererMode(mode)
-            .setEnableDecoderFallback(true)
-        val p = ExoPlayer.Builder(this, renderers).setMediaSourceFactory(DefaultMediaSourceFactory(http))
-            .setLoadControl(loadControl).build()
-        p.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                val ch = current ?: return
-                // First error → retry once, forcing FFmpeg software decoders.
-                if (!retried) { retried = true; forceSoftware = true; loadPreview(ch) }
-            }
-        })
-        return p
     }
 
     /** OK/tap a channel → preview it; OK/tap again on the same (already-previewing) channel → fullscreen. */
@@ -112,21 +82,20 @@ class LiveGridActivity : AppCompatActivity() {
 
     /** Focus or click on a channel → update the preview (debounced). */
     private fun select(ch: Portal.Channel) {
+        if (current?.id == ch.id) return // already previewing this channel (e.g. redundant focus event)
         current = ch
-        retried = false
-        forceSoftware = false // new channel: try hardware first again
-        player?.stop() // release the previous stream immediately (portals often cap concurrent streams)
+        mp?.stop() // release the previous stream immediately (portals often cap concurrent streams)
         pendingPreview?.let { ui.removeCallbacks(it) }
         val r = Runnable { loadPreview(ch) }
         pendingPreview = r
-        ui.postDelayed(r, 550)
+        ui.postDelayed(r, 450)
     }
 
     private fun loadPreview(ch: Portal.Channel) {
         val mine = ++seq
         b.epg.text = "▶  ${ch.name}\n\nLoading…"
         io.execute {
-            if (mine != seq) return@execute // superseded by a newer selection — skip the work
+            if (mine != seq) return@execute // superseded by a newer selection
             val url = Portal.createLink(ch.cmd)
             if (mine != seq) return@execute
             val epg = Portal.shortEpg(ch.id)
@@ -134,20 +103,24 @@ class LiveGridActivity : AppCompatActivity() {
                 if (mine != seq || current != ch) return@runOnUiThread
                 currentUrl = url
                 currentUrlId = ch.id
-                // Fully rebuild the player so the previous stream's connection is released
-                // (this server caps concurrent connections per token).
-                player?.release()
-                val pl = buildPlayer()
-                player = pl
-                b.preview.player = pl
-                if (!url.isNullOrEmpty()) {
-                    pl.setMediaItem(MediaItem.fromUri(url))
-                    pl.prepare()
-                    pl.playWhenReady = true
-                }
+                if (!url.isNullOrEmpty()) playPreview(url)
                 b.epg.text = formatEpg(ch, epg, url)
             }
         }
+    }
+
+    private fun playPreview(url: String) {
+        val vlc = libVlc ?: return
+        val player = mp ?: return
+        player.stop()
+        val media = Media(vlc, Uri.parse(url))
+        media.setHWDecoderEnabled(true, false)
+        media.addOption(":network-caching=1500")
+        media.addOption(":http-user-agent=" + Portal.UA)
+        media.addOption(":http-reconnect")
+        player.media = media
+        media.release()
+        player.play()
     }
 
     private fun formatEpg(ch: Portal.Channel, epg: List<Portal.EpgItem>, url: String?): String {
@@ -168,8 +141,8 @@ class LiveGridActivity : AppCompatActivity() {
 
     private fun openFullscreen() {
         val ch = current ?: return
-        PlayerActivity.liveChannels = all
-        PlayerActivity.kidMode = kidMode
+        LiveVlcActivity.liveChannels = all
+        LiveVlcActivity.kidMode = kidMode
         val idx = all.indexOfFirst { it.id == ch.id }
         val url = if (currentUrlId == ch.id) currentUrl else null
         if (!url.isNullOrEmpty()) {
@@ -184,10 +157,9 @@ class LiveGridActivity : AppCompatActivity() {
     }
 
     private fun playerIntent(ch: Portal.Channel, url: String, idx: Int) =
-        Intent(this, PlayerActivity::class.java)
+        Intent(this, LiveVlcActivity::class.java)
             .putExtra("url", url)
             .putExtra("title", ch.name)
-            .putExtra("live", true)
             .putExtra("chIndex", idx)
 
     private fun toggleSearch() {
@@ -228,10 +200,52 @@ class LiveGridActivity : AppCompatActivity() {
         adapter.submit(if (letter == null) all else all.filter { it.name.trimStart().startsWith(letter, ignoreCase = true) })
     }
 
+    private var progressAnim: android.animation.ObjectAnimator? = null
+
+    private fun showLoading(msg: String) {
+        progressAnim?.cancel()
+        b.loadingBar.progress = 0
+        b.loadingPct.text = "0%"
+        b.loadingMsg.text = msg
+        b.loadingOverlay.visibility = View.VISIBLE
+    }
+
+    private fun setProgress(pct: Int, msg: String, durationMs: Long = 600) {
+        b.loadingMsg.text = msg
+        progressAnim?.cancel()
+        val anim = android.animation.ObjectAnimator.ofInt(b.loadingBar, "progress", b.loadingBar.progress, pct)
+        anim.duration = durationMs
+        anim.interpolator = android.view.animation.DecelerateInterpolator()
+        anim.addUpdateListener { va -> b.loadingPct.text = "${va.animatedValue}%" }
+        progressAnim = anim
+        anim.start()
+    }
+
+    private fun hideLoading() {
+        progressAnim?.cancel()
+        b.loadingOverlay.visibility = View.GONE
+    }
+
+    /** Refresh: re-establish the portal session (recovers a stuck preview) and stay on this screen. */
+    private fun refreshGrid() {
+        showLoading("Reconnecting…")
+        setProgress(55, "Reconnecting…", 1600)
+        io.execute {
+            val err = Portal.connect() // fresh session — recovers stuck / expired streams
+            runOnUiThread {
+                setProgress(100, if (err == null) "Reconnected ✓" else "Reconnected", 350)
+                b.loadingOverlay.postDelayed({
+                    hideLoading()
+                    current?.let { loadPreview(it) } // restart the preview right where the user is
+                }, 450)
+            }
+        }
+    }
+
     private var menuDialog: androidx.appcompat.app.AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
-        // Kid mode strips out Settings / App updates so only safe actions remain.
+        // Kid mode strips Settings / App updates so only safe actions remain.
         val items = if (kidMode)
             arrayOf("🔄   Refresh", "ℹ️   About", "✖   Exit")
         else
@@ -240,7 +254,7 @@ class LiveGridActivity : AppCompatActivity() {
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
-                    action.contains("Refresh") -> current?.let { loadPreview(it) }
+                    action.contains("Refresh") -> refreshGrid()
                     action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)
@@ -287,20 +301,26 @@ class LiveGridActivity : AppCompatActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    override fun onStop() {
-        super.onStop()
-        player?.stop() // free the stream while in fullscreen / background
+    override fun onStart() {
+        super.onStart()
+        // (Re)attach the VLC surface and (re)start the preview. Without re-attaching, the
+        // preview shows a blank surface after returning from the fullscreen player.
+        if (!attached) { mp?.attachViews(b.preview, null, false, false); attached = true }
+        current?.let { loadPreview(it) }
     }
 
-    override fun onRestart() {
-        super.onRestart()
-        current?.let { loadPreview(it) } // resume the preview when returning from fullscreen
+    override fun onStop() {
+        super.onStop()
+        mp?.stop() // free the stream while in fullscreen / background
+        if (attached) { mp?.detachViews(); attached = false }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         pendingPreview?.let { ui.removeCallbacks(it) }
-        player?.release()
-        player = null
+        mp?.let { it.stop(); if (attached) { it.detachViews(); attached = false }; it.release() }
+        mp = null
+        libVlc?.release()
+        libVlc = null
     }
 }
