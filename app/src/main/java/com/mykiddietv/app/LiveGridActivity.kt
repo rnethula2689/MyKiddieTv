@@ -1,4 +1,4 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.content.Context
 import android.content.Intent
@@ -15,7 +15,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import com.stalkertv.app.databinding.ActivityLivegridBinding
+import com.mykiddietv.app.databinding.ActivityLivegridBinding
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
 import java.util.concurrent.Executors
 
@@ -260,7 +260,7 @@ class LiveGridActivity : AppCompatActivity() {
 
     private fun confirmExit() {
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Exit Stalker TV?")
+            .setTitle("Exit MyKiddieTv?")
             .setPositiveButton("Yes") { _, _ -> finishAffinity() }
             .setNegativeButton("No", null)
             .show()

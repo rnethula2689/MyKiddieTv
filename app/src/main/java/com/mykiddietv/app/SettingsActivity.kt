@@ -1,10 +1,10 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.os.Bundle
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import com.stalkertv.app.databinding.ActivitySettingsBinding
+import com.mykiddietv.app.databinding.ActivitySettingsBinding
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var b: ActivitySettingsBinding

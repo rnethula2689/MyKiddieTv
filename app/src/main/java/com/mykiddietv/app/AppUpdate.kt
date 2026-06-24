@@ -1,4 +1,4 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.app.Activity
 import android.content.Intent

@@ -11,7 +11,7 @@ val buildTime: String =
     SimpleDateFormat("yyyy-MM-dd HH:mm 'UTC'").apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 
 android {
-    namespace = "com.stalkertv.app"
+    namespace = "com.mykiddietv.app"
     compileSdk = 35
 
     defaultConfig {

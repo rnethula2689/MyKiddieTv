@@ -1,4 +1,4 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.net.Uri
 import android.os.Bundle
@@ -16,7 +16,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
-import com.stalkertv.app.databinding.ActivityPlayerBinding
+import com.mykiddietv.app.databinding.ActivityPlayerBinding
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
 import java.io.File
 import java.util.concurrent.Executors

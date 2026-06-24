@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import com.stalkertv.app.databinding.ItemCheckBinding
+import com.mykiddietv.app.databinding.ItemCheckBinding
 
 /** A list row with a checkbox indicator, used to whitelist kid content. */
 class CheckAdapter(private val onToggle: (Int) -> Unit) : RecyclerView.Adapter<CheckAdapter.VH>() {

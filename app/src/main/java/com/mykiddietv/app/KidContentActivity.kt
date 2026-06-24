@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.stalkertv.app.databinding.ActivityKidcontentBinding
+import com.mykiddietv.app.databinding.ActivityKidcontentBinding
 import java.util.concurrent.Executors
 
 /**

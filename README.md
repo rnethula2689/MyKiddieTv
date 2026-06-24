@@ -1,8 +1,8 @@
 # MyKiddieTv
 
-A kid-safe IPTV app for Amazon Fire tablets / Fire TV, built on top of the StalkerTV
-(`firetv`) codebase. Same Stalker/Ministra portal client and player, with a profile gate
-and a parental content whitelist added on top.
+A kid-safe IPTV app for Amazon Fire tablets / Fire TV, built on the `firetv`
+codebase. It speaks the Stalker/Ministra portal protocol and reuses that player, with
+a profile gate and a parental content whitelist added on top.
 
 ## How it works
 
@@ -11,7 +11,7 @@ and a parental content whitelist added on top.
 - **Kid** (🧸) → opens the **Kids home** (`KidHomeActivity`). Shows only the live channels
   and movies/series the parent has whitelisted. Parent-only menus (Settings, App updates)
   are hidden in every kid screen.
-- **Parent** (👤) → asks for a **4-digit passcode**, then opens the full StalkerTV browse
+- **Parent** (👤) → asks for a **4-digit passcode**, then opens the full MyKiddieTv browse
   experience (`ChannelsActivity`) — Live TV, all genres, full VOD, search, etc.
 
 > First run: no passcode is set, so the Parent profile opens directly. Set a passcode in

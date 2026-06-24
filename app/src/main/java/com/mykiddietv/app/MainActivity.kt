@@ -1,10 +1,10 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import com.stalkertv.app.databinding.ActivityMainBinding
+import com.mykiddietv.app.databinding.ActivityMainBinding
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {

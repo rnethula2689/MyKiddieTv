@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import com.stalkertv.app.databinding.ItemChannelBinding
+import com.mykiddietv.app.databinding.ItemChannelBinding
 
 /** Channel list for the Live TV preview screen. Fires [onSelect] on focus (D-pad) or click (touch). */
 class ChannelGridAdapter(

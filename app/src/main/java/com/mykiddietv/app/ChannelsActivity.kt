@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.stalkertv.app.databinding.ActivityChannelsBinding
+import com.mykiddietv.app.databinding.ActivityChannelsBinding
 import java.util.concurrent.Executors
 
 class ChannelsActivity : AppCompatActivity() {
@@ -81,7 +81,7 @@ class ChannelsActivity : AppCompatActivity() {
         if (welcomeShown) return
         welcomeShown = true
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Welcome to Stalker TV")
+            .setTitle("Welcome to MyKiddieTv")
             .setMessage(
                 "To start watching, add your IPTV provider:\n\n" +
                     "1. Open Settings (⚙ top-right, or ⋮ menu → Settings).\n" +
@@ -168,7 +168,7 @@ class ChannelsActivity : AppCompatActivity() {
 
     private fun confirmExit() {
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Exit Stalker TV?")
+            .setTitle("Exit MyKiddieTv?")
             .setPositiveButton("Yes") { _, _ -> finishAffinity() }
             .setNegativeButton("No", null)
             .show()
@@ -225,7 +225,7 @@ class ChannelsActivity : AppCompatActivity() {
     /** Read the active provider, connect in the background, then show the home menu. */
     private fun connectAndLoad() {
         val acct = Configs.active(this)
-        b.title.text = "Stalker TV"
+        b.title.text = "MyKiddieTv"
         b.search.setText("")
         backStack.clear()
         adapter.submit(emptyList())
@@ -398,7 +398,7 @@ class ChannelsActivity : AppCompatActivity() {
         backStack.clear()
         push(
             Page(
-                "Stalker TV",
+                "MyKiddieTv",
                 listOf(
                     Row("📺   Live TV", null) { showLiveGenres() },
                     Row("🎬   Movies (VOD)", null) { showVodCategories() }

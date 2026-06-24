@@ -1,4 +1,4 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.content.Intent
 import android.os.Bundle
@@ -8,12 +8,12 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.stalkertv.app.databinding.ActivityProfilesBinding
+import com.mykiddietv.app.databinding.ActivityProfilesBinding
 
 /**
  * Launcher screen. Shows two profiles:
  *   • Kid  → the kid home (only whitelisted content).
- *   • Parent → 4-digit passcode → the full StalkerTV browse experience.
+ *   • Parent → 4-digit passcode → the full MyKiddieTv browse experience.
  */
 class ProfileActivity : AppCompatActivity() {
     private lateinit var b: ActivityProfilesBinding

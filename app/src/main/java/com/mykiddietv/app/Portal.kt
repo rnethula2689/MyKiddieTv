@@ -1,4 +1,4 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import okhttp3.OkHttpClient
 import okhttp3.Request

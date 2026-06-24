@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
-import com.stalkertv.app.databinding.ItemChannelBinding
+import com.mykiddietv.app.databinding.ItemChannelBinding
 
 /** Generic list row (optional thumbnail + label) used for every browse level. */
 class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {

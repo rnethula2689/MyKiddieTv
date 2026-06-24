@@ -1,11 +1,11 @@
-package com.stalkertv.app
+package com.mykiddietv.app
 
 import android.os.Bundle
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
-import com.stalkertv.app.databinding.ActivityAppupdatesBinding
+import com.mykiddietv.app.databinding.ActivityAppupdatesBinding
 
 class AppUpdatesActivity : AppCompatActivity() {
     private lateinit var b: ActivityAppupdatesBinding

@@ -20,7 +20,7 @@
             android:textColor="#19c37d"
             android:textSize="22sp"
             android:textStyle="bold"
-            android:text="Stalker TV" />
+            android:text="MyKiddieTv" />
 
         <TextView
             android:id="@+id/searchBtn"
