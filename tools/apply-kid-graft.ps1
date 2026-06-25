@@ -81,6 +81,36 @@ Repl "$J\LiveGridActivity.kt" @'
             }
 '@ "LiveGrid menu gate"
 
+# Kid guardrails in the Live grid: no long-press-Back exit, immersive, no catch-up.
+Repl "$J\LiveGridActivity.kt" @'
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) { confirmExit(); return true }
+'@ @'
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (kidMode) finish() else confirmExit()
+            return true
+        }
+'@ "LiveGrid kid long-press Back no exit"
+
+Repl "$J\LiveGridActivity.kt" @'
+    private fun openCatchup(ch: Portal.Channel) {
+        startActivity(
+'@ @'
+    private fun openCatchup(ch: Portal.Channel) {
+        if (kidMode) return  // catch-up is not exposed on the kid side
+        startActivity(
+'@ "LiveGrid kid disable catch-up"
+
+Repl "$J\LiveGridActivity.kt" @'
+    private fun activate(ch: Portal.Channel) {
+'@ @'
+    override fun onResume() {
+        super.onResume()
+        if (kidMode) KidGuard.immersive(this)
+    }
+
+    private fun activate(ch: Portal.Channel) {
+'@ "LiveGrid kid immersive onResume"
+
 "== LiveVlcActivity =="
 Repl "$J\LiveVlcActivity.kt" @'
         var liveChannels: List<Portal.Channel> = emptyList()

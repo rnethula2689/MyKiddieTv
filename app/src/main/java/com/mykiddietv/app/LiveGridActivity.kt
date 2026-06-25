@@ -81,6 +81,11 @@ class LiveGridActivity : AppCompatActivity() {
     }
 
     /** OK/tap a channel → preview it; OK/tap again on the same (already-previewing) channel → fullscreen. */
+    override fun onResume() {
+        super.onResume()
+        if (kidMode) KidGuard.immersive(this)
+    }
+
     private fun activate(ch: Portal.Channel) {
         if (current?.id == ch.id) openFullscreen() else select(ch)
     }
@@ -317,6 +322,7 @@ class LiveGridActivity : AppCompatActivity() {
     }
 
     private fun openCatchup(ch: Portal.Channel) {
+        if (kidMode) return  // catch-up is not exposed on the kid side
         startActivity(
             Intent(this, CatchupActivity::class.java)
                 .putExtra("chId", ch.id).putExtra("chName", ch.name)
@@ -379,7 +385,10 @@ class LiveGridActivity : AppCompatActivity() {
     }
 
     override fun onKeyLongPress(keyCode: Int, event: android.view.KeyEvent): Boolean {
-        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) { confirmExit(); return true }
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (kidMode) finish() else confirmExit()
+            return true
+        }
         return super.onKeyLongPress(keyCode, event)
     }
 
