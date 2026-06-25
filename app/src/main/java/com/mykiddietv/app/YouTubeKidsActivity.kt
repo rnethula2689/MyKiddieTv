@@ -42,16 +42,35 @@ class YouTubeKidsActivity : AppCompatActivity() {
             mediaPlaybackRequiresUserGesture = false
             useWideViewPort = true
             loadWithOverviewMode = true
-            // A real mobile-Chrome UA (no "wv") so YouTube serves the normal site + video.
-            userAgentString = "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+            builtInZoomControls = true
+            displayZoomControls = false
+            setSupportZoom(true)
+            // Desktop-Chrome UA: youtubekids.com mobile-web only pushes the native app +
+            // Family Link setup, while the desktop site has the actual "Who's watching -> watch" flow.
+            userAgentString = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
+        WebView.setWebContentsDebuggingEnabled(true)
 
         // Cookies (incl. third-party for Google sign-in) so the parent's setup persists.
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true)
 
-        web.webViewClient = WebViewClient()   // keep all navigation inside the app
+        web.webViewClient = object : WebViewClient() {   // keep all navigation inside the app
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                android.util.Log.i("YTKids", "start: $url")
+            }
+            override fun onPageFinished(view: WebView?, url: String?) {
+                android.util.Log.i("YTKids", "finish: $url")
+            }
+            override fun onReceivedError(
+                view: WebView?,
+                request: android.webkit.WebResourceRequest?,
+                error: android.webkit.WebResourceError?
+            ) {
+                android.util.Log.e("YTKids", "error ${request?.url}: ${error?.errorCode} ${error?.description}")
+            }
+        }
 
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
