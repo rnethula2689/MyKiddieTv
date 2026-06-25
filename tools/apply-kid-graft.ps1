@@ -410,7 +410,7 @@ Repl "$J\Updater.kt" @'
         "https://github.com/rnethula2689/MyKiddieTv/releases/download/apk-latest/latest_version.json"
 '@ "Updater version URL -> release asset"
 
-"== ChannelsActivity: quick Manage Kid Content + grouped Downloads (option B) =="
+"== ChannelsActivity: quick Manage Kid Content row on the parent home =="
 Repl "$J\ChannelsActivity.kt" @'
                     Row("🎬   Movies (VOD)", null) { showVodCategories() },
                     Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
@@ -420,11 +420,13 @@ Repl "$J\ChannelsActivity.kt" @'
                     Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
 '@ "ChannelsActivity Manage Kid Content home row"
 
-Repl "$J\ChannelsActivity.kt" @'
-startActivity(Intent(this, DownloadsActivity::class.java))
+"== DownloadsActivity: parent's own downloads only (kid downloads filtered out) =="
+Repl "$J\DownloadsActivity.kt" @'
+        val items = Downloads.list(this)
 '@ @'
-run { OfflineActivity.kidMode = false; startActivity(Intent(this, OfflineActivity::class.java)) }
-'@ "ChannelsActivity Downloads -> grouped OfflineActivity"
+        // Parent's own downloads only — kid downloads live in Approved Content → Downloads.
+        val items = Downloads.list(this).filterNot { Profiles.isKidDownload(this, it.id) }
+'@ "DownloadsActivity exclude kid downloads"
 
 if ($fail -gt 0) { "`nGRAFT INCOMPLETE: $fail anchor(s) missing — upstream changed; fix manually." }
 else { "`nGRAFT OK" }

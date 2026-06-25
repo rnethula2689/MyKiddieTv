@@ -68,7 +68,8 @@ class DownloadsActivity : AppCompatActivity(), Downloads.Listener {
     override fun onDownloadsChanged() { runOnUiThread { refresh() } }
 
     private fun refresh() {
-        val items = Downloads.list(this)
+        // Parent's own downloads only — kid downloads live in Approved Content → Downloads.
+        val items = Downloads.list(this).filterNot { Profiles.isKidDownload(this, it.id) }
         b.empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
         adapter.submit(items)
     }

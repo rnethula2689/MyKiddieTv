@@ -209,12 +209,14 @@ class KidContentActivity : AppCompatActivity() {
         var started = 0
         pendingVod.values.forEach { v ->
             Downloads.enqueue(applicationContext, v.id, v.name, v.posterUrl, "vod|${v.id}|${v.cmd}")
+            Profiles.addKidDownload(applicationContext, v.id) // kid bucket — kept separate from the parent's own downloads
             started++
         }
         pendingEpisodes.values.forEach { e ->
             // Title encodes the hierarchy so the Downloads views can group Series ⟫ Season ⟫ Episode.
             val title = "${e.seriesName} ⟫ ${e.seasonName.ifBlank { "Season" }} ⟫ ${e.name}"
             Downloads.enqueue(applicationContext, e.key, title, e.poster, e.source)
+            Profiles.addKidDownload(applicationContext, e.key)
             started++
         }
         pendingVod.clear(); pendingEpisodes.clear()

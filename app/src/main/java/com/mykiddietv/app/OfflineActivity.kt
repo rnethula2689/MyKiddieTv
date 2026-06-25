@@ -58,8 +58,14 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
     override fun onDownloadsChanged() { runOnUiThread { loadEntries(); render() } }
 
     private fun loadEntries() {
-        val all = Downloads.list(this).map { toEntry(it) }
+        // Only the KID bucket here — the parent's own downloads live in the Stalker Downloads screen.
+        val all = Downloads.list(this).filter { Profiles.isKidDownload(this, it.id) }.map { toEntry(it) }
         entries = if (kidMode) all.filter { it.item.status == Downloads.DONE } else all
+    }
+
+    private fun delDownload(id: String) {
+        Downloads.delete(applicationContext, id)
+        Profiles.removeKidDownload(applicationContext, id)
     }
 
     private fun toEntry(item: Downloads.Item): Entry {
@@ -145,19 +151,19 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
         when (e.item.status) {
             Downloads.DONE -> AlertDialog.Builder(this).setTitle(e.item.title)
                 .setItems(arrayOf("▶  Play", "🗑  Delete download")) { _, w ->
-                    if (w == 0) playOffline(e) else Downloads.delete(applicationContext, id)
+                    if (w == 0) playOffline(e) else delDownload(id)
                 }.show()
             Downloads.DOWNLOADING, Downloads.QUEUED -> AlertDialog.Builder(this).setTitle(e.item.title)
                 .setItems(arrayOf("⏸  Pause", "🗑  Stop & remove")) { _, w ->
-                    if (w == 0) Downloads.pause(applicationContext, id) else Downloads.delete(applicationContext, id)
+                    if (w == 0) Downloads.pause(applicationContext, id) else delDownload(id)
                 }.show()
             Downloads.PAUSED -> AlertDialog.Builder(this).setTitle(e.item.title)
                 .setItems(arrayOf("▶  Resume", "🗑  Delete")) { _, w ->
-                    if (w == 0) Downloads.resume(applicationContext, id) else Downloads.delete(applicationContext, id)
+                    if (w == 0) Downloads.resume(applicationContext, id) else delDownload(id)
                 }.show()
             else -> AlertDialog.Builder(this).setTitle(e.item.title)
                 .setItems(arrayOf("↻  Retry", "🗑  Remove")) { _, w ->
-                    if (w == 0) Downloads.resume(applicationContext, id) else Downloads.delete(applicationContext, id)
+                    if (w == 0) Downloads.resume(applicationContext, id) else delDownload(id)
                 }.show()
         }
     }
@@ -165,7 +171,7 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
     private fun playOffline(e: Entry) {
         if (e.item.status != Downloads.DONE) { Toast.makeText(this, "Not downloaded yet.", Toast.LENGTH_SHORT).show(); return }
         val f = Downloads.fileFor(this, e.item)
-        if (!f.exists()) { Downloads.delete(applicationContext, e.item.id); loadEntries(); render(); return }
+        if (!f.exists()) { delDownload(e.item.id); loadEntries(); render(); return }
         PlayerActivity.kidMode = kidMode
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra("url", Uri.fromFile(f).toString())

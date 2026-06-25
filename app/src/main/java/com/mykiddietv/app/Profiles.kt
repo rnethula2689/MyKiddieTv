@@ -148,4 +148,31 @@ object Profiles {
         prefs(ctx).edit().putString("episodes", arr.toString()).apply()
         dirty = true
     }
+
+    // ---- which downloads were made FOR THE KID (vs the parent's own downloads) ----
+    // Kid downloads show only in Approved Content → Downloads and the kid's Downloaded folder;
+    // they're filtered out of the parent's own (Stalker-style) Downloads screen.
+    fun kidDownloadIds(ctx: Context): LinkedHashSet<String> {
+        val out = LinkedHashSet<String>()
+        try {
+            val arr = JSONArray(prefs(ctx).getString("kidDownloads", "[]") ?: "[]")
+            for (i in 0 until arr.length()) out.add(arr.getString(i))
+        } catch (_: Exception) {}
+        return out
+    }
+
+    fun isKidDownload(ctx: Context, id: String): Boolean = kidDownloadIds(ctx).contains(id)
+
+    fun addKidDownload(ctx: Context, id: String) {
+        val s = kidDownloadIds(ctx); if (s.add(id)) saveKidDownloads(ctx, s)
+    }
+
+    fun removeKidDownload(ctx: Context, id: String) {
+        val s = kidDownloadIds(ctx); if (s.remove(id)) saveKidDownloads(ctx, s)
+    }
+
+    private fun saveKidDownloads(ctx: Context, ids: Set<String>) {
+        val arr = JSONArray(); ids.forEach { arr.put(it) }
+        prefs(ctx).edit().putString("kidDownloads", arr.toString()).apply()
+    }
 }
