@@ -24,7 +24,20 @@ class DownloadsActivity : AppCompatActivity(), Downloads.Listener {
         setContentView(b.root)
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
+        b.removeAllBtn.setOnClickListener { confirmRemoveAll() }
         refresh()
+    }
+
+    private fun confirmRemoveAll() {
+        AlertDialog.Builder(this)
+            .setTitle("Remove all downloads?")
+            .setMessage("This deletes every downloaded title and frees the disk space. This cannot be undone.")
+            .setPositiveButton("Remove all") { _, _ ->
+                Downloads.deleteAll(applicationContext)
+                refresh()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private var netCb: android.net.ConnectivityManager.NetworkCallback? = null
@@ -71,6 +84,7 @@ class DownloadsActivity : AppCompatActivity(), Downloads.Listener {
         // Parent's own downloads only — kid downloads live in Approved Content → Downloads.
         val items = Downloads.list(this).filterNot { Profiles.isKidDownload(this, it.id) }
         b.empty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        b.removeAllBtn.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
         adapter.submit(items)
     }
 
