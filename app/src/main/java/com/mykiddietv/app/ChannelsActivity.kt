@@ -17,7 +17,7 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Optional favourite toggle for a row (channels / movies). Null = not favouritable (e.g. folders). */
     class FavInfo(val isFav: () -> Boolean, val toggle: () -> Boolean)
-    data class Row(val label: String, val iconUrl: String?, val sortKey: String = "", val fav: FavInfo? = null, val action: () -> Unit)
+    data class Row(val label: String, val iconUrl: String?, val sortKey: String = "", val fav: FavInfo? = null, val isHeader: Boolean = false, val catchup: (() -> Unit)? = null, val action: () -> Unit)
     enum class SearchKind { LOCAL, GLOBAL, CHANNELS, VOD_ALL, VOD_CATEGORY }
     data class Page(
         val title: String,
@@ -202,7 +202,7 @@ class ChannelsActivity : AppCompatActivity() {
         val dlg = androidx.appcompat.app.AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 when (which) {
-                    0 -> connectAndLoad()
+                    0 -> connectAndLoad(true)
                     1 -> startActivity(Intent(this, SettingsActivity::class.java))
                     2 -> changePin()
                     3 -> startActivity(Intent(this, AppUpdatesActivity::class.java))
@@ -274,14 +274,13 @@ class ChannelsActivity : AppCompatActivity() {
         super.onResume()
         if (Configs.dirty) {
             Configs.dirty = false
-            connectAndLoad()
+            connectAndLoad(true)
             return
         }
-        // Returning to a Live TV / Movies page → refresh it so the Favourites count is current.
+        // Returning from a player/child → rebuild the current screen so counts and
+        // Continue-Watching progress are current (all in-memory; no portal reconnect).
         val top = backStack.lastOrNull()
-        if ((top?.title == "Live TV" || top?.title == "Movies") && top.rebuild != null) {
-            backStack.removeLast(); top.rebuild!!.invoke()
-        }
+        if (top?.rebuild != null) { backStack.removeLast(); top.rebuild!!.invoke() }
     }
 
     private var progressAnim: android.animation.ObjectAnimator? = null
@@ -344,17 +343,25 @@ class ChannelsActivity : AppCompatActivity() {
                 "MyKiddieTv",
                 listOf(
                     Row("⬇   Downloads (offline)", null) { startActivity(Intent(this, DownloadsActivity::class.java)) },
-                    Row("🔄   Retry connection", null) { connectAndLoad() }
+                    Row("🔄   Retry connection", null) { connectAndLoad(true) }
                 ),
                 kind = SearchKind.LOCAL
             )
         )
     }
 
+    // Cached portal data, kept across activity recreation so returning to the app (e.g. after a
+    // movie) reuses it instead of reconnecting and showing the loading splash again.
+    companion object {
+        private var cachedSig: String? = null
+        private var cachedChannels: List<Portal.Channel> = emptyList()
+        private var cachedGenres: List<Portal.Genre> = emptyList()
+        private var cachedVodCats: List<Portal.VodCat> = emptyList()
+    }
+
     /** Read the active provider, connect in the background, then show the home menu. */
-    private fun connectAndLoad() {
+    private fun connectAndLoad(force: Boolean = false) {
         parentalUnlocked = false // a fresh portal load re-locks restricted folders
-        vodCats = emptyList() // drop cached categories on a fresh load
         val acct = Configs.active(this)
         b.title.text = "MyKiddieTv"
         b.search.setText("")
@@ -371,6 +378,18 @@ class ChannelsActivity : AppCompatActivity() {
         Portal.portalUrl = acct.portal
         Portal.mac = acct.mac
         Portal.sn = acct.sn
+        // Reuse cached data (same provider, app still in memory) → no reconnect, no splash.
+        if (!force && cachedSig == acct.sig() && cachedChannels.isNotEmpty()) {
+            allChannels = cachedChannels
+            genres = cachedGenres
+            byGenre = cachedChannels.groupBy { it.genreId }
+            vodCats = cachedVodCats
+            hideLoading()
+            showHome()
+            return
+        }
+        vodCats = emptyList()
+        cachedVodCats = emptyList()
         if (!isOnline()) { goOffline(); return } // no network → straight to offline home
         showLoading("Connecting to portal…")
         setProgress(40, "Connecting to portal…", 2200) // creep up while the handshake runs
@@ -388,6 +407,7 @@ class ChannelsActivity : AppCompatActivity() {
                 allChannels = ch
                 genres = g
                 byGenre = ch.groupBy { it.genreId }
+                cachedSig = acct.sig(); cachedChannels = ch; cachedGenres = g // cache for next launch
                 if (ch.isEmpty()) {
                     hideLoading()
                     b.status.visibility = View.VISIBLE
@@ -456,7 +476,15 @@ class ChannelsActivity : AppCompatActivity() {
     private fun channelRow(ch: Portal.Channel): Row {
         val label = "📺  " + (if (ch.number.isNotEmpty()) "${ch.number}. " else "") + ch.name
         val fav = FavInfo({ Configs.isFavorite(this, ch.id) }, { Configs.toggleFavorite(this, ch.id) })
-        return Row(label, ch.logoUrl, sortKey = ch.name, fav = fav) { playChannel(ch) }
+        return Row(label, ch.logoUrl, sortKey = ch.name, fav = fav, catchup = { openCatchup(ch) }) { playChannel(ch) }
+    }
+
+    private fun openCatchup(ch: Portal.Channel) {
+        startActivity(
+            Intent(this, CatchupActivity::class.java)
+                .putExtra("chId", ch.id).putExtra("chName", ch.name)
+                .putExtra("chCmd", ch.cmd).putExtra("archiveDays", ch.archiveDays)
+        )
     }
 
     /** Channels always open in the live (VLC) player — same as the Live TV grid, no seek controls. */
@@ -509,7 +537,7 @@ class ChannelsActivity : AppCompatActivity() {
             .setTitle(title)
             .setItems(arrayOf("▶  Play", "⬇  Download for offline", "📂  Go to Downloads")) { _, w ->
                 when (w) {
-                    0 -> play(title) { Downloads.resolveSource(source) }
+                    0 -> play(title, id, poster, source)
                     1 -> {
                         if (Downloads.has(applicationContext, id)) {
                             android.widget.Toast.makeText(this, "Already saved (or downloading). See Downloads.", android.widget.Toast.LENGTH_SHORT).show()
@@ -592,19 +620,93 @@ class ChannelsActivity : AppCompatActivity() {
     // ---- screens ----
     private fun showHome() {
         backStack.clear()
-        push(
-            Page(
-                "MyKiddieTv",
-                listOf(
-                    Row("📺   Live TV", null) { showLiveGenres() },
-                    Row("🎬   Movies (VOD)", null) { showVodCategories() },
-                    Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) },
-                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
-                ),
-                kind = SearchKind.GLOBAL,
-                rebuild = { showHome() }
-            )
-        )
+        val rows = ArrayList<Row>()
+        val cw = Resume.all(this)
+        if (cw.isNotEmpty())
+            rows.add(Row("▶   Continue Watching  (${cw.size})", null) { showContinueWatching() })
+        rows.add(Row("📺   Live TV", null) { showLiveGenres() })
+        rows.add(Row("🎬   Movies (VOD)", null) { showVodCategories() })
+        rows.add(Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) })
+        rows.add(Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) })
+        push(Page("MyKiddieTv", rows, kind = SearchKind.GLOBAL, rebuild = { showHome() }))
+    }
+
+    private fun showContinueWatching() {
+        val all = Resume.all(this)
+        val live = all.filter { it.kind == "live" }
+        val vod = all.filter { it.kind != "live" }
+        val rows = ArrayList<Row>()
+        if (live.isNotEmpty()) {
+            rows.add(Row("📺   LIVE TV", null, isHeader = true) {})
+            for (e in live) rows.add(Row("📺  ${e.title}", e.poster.ifBlank { null }, sortKey = e.title) { continueClick(e) })
+        }
+        if (vod.isNotEmpty()) {
+            rows.add(Row("🎬   MOVIES & SHOWS", null, isHeader = true) {})
+            for (e in vod) {
+                val pct = if (e.duration > 0) (e.position * 100 / e.duration).toInt() else 0
+                val label = "🎬  ${e.title}" + (if (pct in 1..99) "   •   $pct%" else "")
+                rows.add(Row(label, e.poster.ifBlank { null }, sortKey = e.title) { continueClick(e) })
+            }
+        }
+        if (rows.isNotEmpty())
+            rows.add(Row("🗑   Clear Continue Watching", null) { confirmClearContinue() })
+        push(Page("Continue Watching", rows, kind = SearchKind.LOCAL, rebuild = { showContinueWatching() }))
+    }
+
+    private fun confirmClearContinue() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Clear Continue Watching?")
+            .setMessage("This removes everything from your Continue Watching list.")
+            .setPositiveButton("Clear all") { _, _ ->
+                Resume.clearAll(this)
+                android.widget.Toast.makeText(this, "Continue Watching cleared", android.widget.Toast.LENGTH_SHORT).show()
+                onBackPressed() // back to home; the row is gone
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun continueClick(e: Resume.Entry) {
+        if (e.kind == "live") {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(e.title)
+                .setItems(arrayOf("▶  Play", "🗑  Remove from Continue Watching")) { _, w ->
+                    if (w == 0) playLiveResume(e) else { Resume.remove(this, e.id); refreshContinue() }
+                }
+                .show()
+        } else {
+            play(e.title, e.id, e.poster, e.source) // shows Resume / Start over / Remove
+        }
+    }
+
+    private fun playLiveResume(e: Resume.Entry) {
+        val p = e.source.split("|")
+        val chId = p.getOrElse(1) { "" }
+        val cmd = p.getOrElse(2) { "" }
+        b.status.visibility = View.VISIBLE
+        b.status.text = "Opening ${e.title}…"
+        playIo.execute {
+            val url = Portal.createLink(cmd)
+            runOnUiThread {
+                if (url.isNullOrEmpty()) {
+                    b.status.visibility = View.VISIBLE
+                    b.status.text = "Couldn't open “${e.title}”."
+                } else {
+                    b.status.visibility = View.GONE
+                    LiveVlcActivity.liveChannels = allChannels
+                    startActivity(
+                        Intent(this, LiveVlcActivity::class.java)
+                            .putExtra("url", url).putExtra("title", e.title)
+                            .putExtra("chIndex", allChannels.indexOfFirst { it.id == chId })
+                    )
+                }
+            }
+        }
+    }
+
+    private fun refreshContinue() {
+        val top = backStack.lastOrNull()
+        if (top?.title == "Continue Watching" && top.rebuild != null) { backStack.removeLast(); top.rebuild!!.invoke() }
     }
 
     private fun showLiveGenres() {
@@ -732,6 +834,7 @@ class ChannelsActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 vodCats = cats
+                cachedVodCats = cats
                 displayVodCategories()
             }
         }
@@ -907,11 +1010,28 @@ class ChannelsActivity : AppCompatActivity() {
         }
     }
 
-    private fun play(title: String, resolve: () -> String?) {
+    /** Play a movie/episode; if there's a saved position, ask Resume / Start over first. */
+    private fun play(title: String, resumeId: String, poster: String?, source: String) {
+        val r = Resume.get(this, resumeId)
+        if (Resume.resumable(r)) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(arrayOf("▶  Resume from ${fmtTime(r!!.position)}", "↻  Start from beginning", "🗑  Remove from Continue Watching")) { _, w ->
+                    when (w) {
+                        0 -> startPlayer(title, resumeId, poster, source, r.position)
+                        1 -> startPlayer(title, resumeId, poster, source, 0L)
+                        2 -> { Resume.remove(this, resumeId); refreshContinue() }
+                    }
+                }
+                .show()
+        } else startPlayer(title, resumeId, poster, source, 0L)
+    }
+
+    private fun startPlayer(title: String, resumeId: String, poster: String?, source: String, startPos: Long) {
         b.status.visibility = View.VISIBLE
         b.status.text = "Opening $title…"
         playIo.execute {
-            val url = resolve()
+            val url = Downloads.resolveSource(source)
             runOnUiThread {
                 if (url.isNullOrEmpty()) {
                     b.status.visibility = View.VISIBLE
@@ -926,9 +1046,18 @@ class ChannelsActivity : AppCompatActivity() {
                         Intent(this, PlayerActivity::class.java)
                             .putExtra("url", url)
                             .putExtra("title", title)
+                            .putExtra("resumeId", resumeId)
+                            .putExtra("resumeSource", source)
+                            .putExtra("resumePoster", poster ?: "")
+                            .putExtra("resumeStart", startPos)
                     )
                 }
             }
         }
+    }
+
+    private fun fmtTime(ms: Long): String {
+        val s = ms / 1000; val h = s / 3600; val m = (s % 3600) / 60; val sec = s % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, sec) else String.format("%d:%02d", m, sec)
     }
 }

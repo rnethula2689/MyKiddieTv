@@ -30,6 +30,13 @@ class PlayerActivity : AppCompatActivity() {
     private var titleText: String = ""
     private var isLive = false
     private var chIndex = -1
+    private var resumeId = ""
+    private var resumeSource = ""
+    private var resumePoster = ""
+    private val resumeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val resumeSaver = object : Runnable {
+        override fun run() { saveResume(); resumeHandler.postDelayed(this, 10_000) }
+    }
     // Some streams use codecs the device can't hardware-decode (e.g. HEVC 10-bit, DTS).
     // We start hardware-first for efficiency, then on a playback error rebuild the player
     // forcing FFmpeg software decoders for both audio and video.
@@ -62,6 +69,10 @@ class PlayerActivity : AppCompatActivity() {
 
         isLive = intent.getBooleanExtra("live", false)
         chIndex = intent.getIntExtra("chIndex", -1)
+        resumeId = intent.getStringExtra("resumeId") ?: ""
+        resumeSource = intent.getStringExtra("resumeSource") ?: ""
+        resumePoster = intent.getStringExtra("resumePoster") ?: ""
+        val resumeStart = intent.getLongExtra("resumeStart", 0L)
         if (isLive) {
             // Live TV can't seek back/forward — drop those controls; Up/Down change channels.
             b.playerView.setShowPreviousButton(false)
@@ -75,7 +86,10 @@ class PlayerActivity : AppCompatActivity() {
         b.playerView.player = p
         p.setMediaItem(MediaItem.fromUri(videoUrl))
         p.prepare()
+        if (resumeStart > 0 && !isLive) p.seekTo(resumeStart)
         p.playWhenReady = true
+
+        if (resumeId.isNotBlank() && !isLive) resumeHandler.postDelayed(resumeSaver, 10_000)
 
         b.playerView.controllerShowTimeoutMs = 6000
         b.playerView.requestFocus()
@@ -279,6 +293,14 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun saveResume() {
+        if (resumeId.isBlank() || isLive) return
+        val p = player ?: return
+        val pos = p.currentPosition
+        val dur = p.duration
+        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0)
+    }
+
     override fun onBackPressed() {
         if (screenLock?.locked == true) return
         super.onBackPressed()
@@ -286,11 +308,14 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        saveResume()
         player?.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        resumeHandler.removeCallbacks(resumeSaver)
+        saveResume()
         player?.release()
         player = null
     }

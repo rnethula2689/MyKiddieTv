@@ -28,7 +28,8 @@ object Portal {
 
     data class Channel(
         val id: String, val name: String, val number: String,
-        val cmd: String, val logoUrl: String, val genreId: String, val censored: Boolean = false
+        val cmd: String, val logoUrl: String, val genreId: String, val censored: Boolean = false,
+        val archiveDays: Int = 0
     )
     data class Genre(val id: String, val title: String, val censored: Boolean = false)
     data class VodCat(val id: String, val title: String)
@@ -181,7 +182,8 @@ object Portal {
                     cmd = c.optString("cmd"),
                     logoUrl = if (logo.isBlank() || logo == "null") "" else logosBase + logo,
                     genreId = c.optString("tv_genre_id"),
-                    censored = c.optInt("censored", 0) == 1
+                    censored = c.optInt("censored", 0) == 1,
+                    archiveDays = c.optInt("tv_archive_duration", 0)
                 )
             )
         }
@@ -209,6 +211,66 @@ object Portal {
             }
         } catch (_: Exception) {}
         return out
+    }
+
+    /** Format an absolute (UTC) unix timestamp as local wall-clock time, e.g. "1:30 PM". */
+    fun localTime(ts: Long): String =
+        if (ts <= 0) "" else java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(java.util.Date(ts * 1000))
+
+    /**
+     * Full programme schedule for a channel around a given date (yyyy-mm-dd), for catch-up.
+     * Tries the dated table first; if the portal ignores/forbids the date param it falls back to the
+     * channel's whole table (the caller filters to the wanted day by timestamp).
+     */
+    fun epgForDate(chId: String, dateYmd: String): List<EpgItem> {
+        val dated = fetchSimpleTable(chId, "&date=$dateYmd")
+        if (dated.isNotEmpty()) return dated
+        return fetchSimpleTable(chId, "")
+    }
+
+    private fun fetchSimpleTable(chId: String, extra: String): List<EpgItem> {
+        val out = ArrayList<EpgItem>()
+        try {
+            var page = 1
+            while (page <= 12) {
+                val body = get("$base?type=itv&action=get_simple_data_table&ch_id=$chId$extra&p=$page&JsHttpRequest=1-xml", true)
+                // `js` can be a plain array (like get_short_epg) or an object with a "data" array.
+                val arr = jsArray(body) ?: break
+                if (arr.length() == 0) break
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    out.add(
+                        EpgItem(
+                            name = o.optString("name"),
+                            start = o.optString("t_time"),
+                            end = o.optString("t_time_to"),
+                            descr = o.optString("descr"),
+                            hasArchive = o.optInt("mark_archive", 0) == 1,
+                            startTs = o.optLong("start_timestamp", 0),
+                            stopTs = o.optLong("stop_timestamp", 0)
+                        )
+                    )
+                }
+                // Paging info only exists when js is an object; otherwise it's a single-shot array.
+                val jsObj = try { JSONObject(body).optJSONObject("js") } catch (_: Exception) { null } ?: break
+                val total = jsObj.optInt("total_items", arr.length())
+                val per = jsObj.optInt("max_page_items", arr.length()).coerceAtLeast(1)
+                if (page >= Math.ceil(total.toDouble() / per).toInt()) break
+                page++
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    /**
+     * Resolve a catch-up (archive) stream for a programme that started at [startTs].
+     * Standard Flussonic/Ministra approach: resolve the live link, then request the archive via utc.
+     */
+    fun archiveLink(channelCmd: String, startTs: Long): String? {
+        val live = resolve("itv", channelCmd) ?: return null
+        val now = System.currentTimeMillis() / 1000
+        val sep = if (live.contains("?")) "&" else "?"
+        return "$live${sep}utc=$startTs&lutc=$now"
     }
 
     fun vodCategories(): List<VodCat> {

@@ -26,6 +26,23 @@ class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val row = items[position]
+        if (row.isHeader) {
+            holder.b.name.text = row.label
+            holder.b.name.setTextColor(0xFF19C37D.toInt())
+            holder.b.thumb.visibility = View.GONE
+            holder.b.star.visibility = View.GONE
+            holder.b.clock.visibility = View.GONE
+            holder.b.root.setOnKeyListener(null)
+            holder.b.root.isFocusable = false
+            holder.b.root.isClickable = false
+            holder.b.root.setOnClickListener(null)
+            holder.b.root.setOnLongClickListener(null)
+            holder.b.root.isLongClickable = false
+            return
+        }
+        holder.b.root.isFocusable = true
+        holder.b.root.isClickable = true
+        holder.b.name.setTextColor(0xFFE6EDF3.toInt())
         holder.b.name.text = row.label
         val url = row.iconUrl
         if (url.isNullOrEmpty()) {
@@ -63,6 +80,25 @@ class RowAdapter : RecyclerView.Adapter<RowAdapter.VH>() {
             }
             holder.b.star.setOnClickListener { toggle() }           // tap the star (touch)
             holder.b.root.setOnLongClickListener { toggle(); true }  // long-press OK / long-tap = favourite
+        }
+        // Catch-up clock (channels only): tap it, or press LEFT on the row to jump to it.
+        val cu = row.catchup
+        if (cu == null) {
+            holder.b.clock.visibility = View.GONE
+            holder.b.root.setOnKeyListener(null)
+        } else {
+            holder.b.clock.visibility = View.VISIBLE
+            holder.b.clock.setOnClickListener { cu() }
+            holder.b.root.setOnKeyListener { _, keyCode, ev ->
+                if (ev.action == android.view.KeyEvent.ACTION_DOWN && keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+                    holder.b.clock.requestFocus(); true
+                } else false
+            }
+            holder.b.clock.setOnKeyListener { _, keyCode, ev ->
+                if (ev.action == android.view.KeyEvent.ACTION_DOWN && keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                    holder.b.root.requestFocus(); true
+                } else false
+            }
         }
     }
 

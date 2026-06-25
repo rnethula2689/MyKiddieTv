@@ -286,18 +286,21 @@ Repl "$J\ChannelsActivity.kt" @'
                     b.status.visibility = View.GONE
                     startActivity(
                         Intent(this, PlayerActivity::class.java)
-                            .putExtra("url", url)
-                            .putExtra("title", title)
-                    )
 '@ @'
                     b.status.visibility = View.GONE
                     PlayerActivity.kidMode = false
                     startActivity(
                         Intent(this, PlayerActivity::class.java)
-                            .putExtra("url", url)
-                            .putExtra("title", title)
-                    )
 '@ "play() PlayerActivity kidMode reset"
+
+Repl "$J\CatchupActivity.kt" @'
+                    b.status.visibility = View.GONE
+                    LiveVlcActivity.liveChannels = emptyList()
+'@ @'
+                    b.status.visibility = View.GONE
+                    LiveVlcActivity.kidMode = false
+                    LiveVlcActivity.liveChannels = emptyList()
+'@ "CatchupActivity LiveVlc kidMode reset"
 
 "== Guardrails: remove Exit from kid menus =="
 Repl "$J\LiveVlcActivity.kt" @'
@@ -389,6 +392,7 @@ Repl "$J\PlayerActivity.kt" @'
 Repl "$J\PlayerActivity.kt" @'
     override fun onStop() {
         super.onStop()
+        saveResume()
         player?.pause()
     }
 '@ @'
@@ -399,6 +403,7 @@ Repl "$J\PlayerActivity.kt" @'
 
     override fun onStop() {
         super.onStop()
+        saveResume()
         player?.pause()
     }
 '@ "Player onBackPressed lock guard"
@@ -412,12 +417,12 @@ Repl "$J\Updater.kt" @'
 
 "== ChannelsActivity: quick Manage Kid Content row on the parent home =="
 Repl "$J\ChannelsActivity.kt" @'
-                    Row("🎬   Movies (VOD)", null) { showVodCategories() },
-                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
+        rows.add(Row("🎬   Movies (VOD)", null) { showVodCategories() })
+        rows.add(Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) })
 '@ @'
-                    Row("🎬   Movies (VOD)", null) { showVodCategories() },
-                    Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) },
-                    Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) }
+        rows.add(Row("🎬   Movies (VOD)", null) { showVodCategories() })
+        rows.add(Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) })
+        rows.add(Row("⬇   Downloads", null) { startActivity(Intent(this, DownloadsActivity::class.java)) })
 '@ "ChannelsActivity Manage Kid Content home row"
 
 "== DownloadsActivity: parent's own downloads only (kid downloads filtered out) =="

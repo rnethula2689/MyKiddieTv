@@ -52,7 +52,7 @@ class LiveGridActivity : AppCompatActivity() {
         libVlc = vlc
         mp = MediaPlayer(vlc) // attached to the surface in onStart (and re-attached on return from fullscreen)
 
-        adapter = ChannelGridAdapter(all, { ch -> activate(ch) }, { ch -> select(ch) }, { ch -> favToast(ch) })
+        adapter = ChannelGridAdapter(all, { ch -> activate(ch) }, { ch -> select(ch) }, { ch -> favToast(ch) }, { ch -> openCatchup(ch) })
         b.list.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
         b.list.adapter = adapter
 
@@ -153,15 +153,18 @@ class LiveGridActivity : AppCompatActivity() {
             b.upNext.removeAllViews()
             return
         }
-        val now = epg[0]
+        val nowSec = System.currentTimeMillis() / 1000
+        // Pick the programme actually on now by absolute timestamps (not the portal's ordering/timezone).
+        var nowIdx = epg.indexOfFirst { it.startTs in 1..nowSec && (it.stopTs == 0L || nowSec < it.stopTs) }
+        if (nowIdx < 0) nowIdx = epg.indexOfLast { it.startTs in 1..nowSec }
+        if (nowIdx < 0) nowIdx = 0
+        val now = epg[nowIdx]
         b.nowBadge.visibility = View.VISIBLE
-        b.nowTime.text = "${now.start} – ${now.end}"
+        b.nowTime.text = if (now.startTs > 0) "${Portal.localTime(now.startTs)} – ${Portal.localTime(now.stopTs)}" else "${now.start} – ${now.end}"
         b.nowTitle.text = now.name
         b.nowDesc.text = if (url.isNullOrEmpty())
             "(no stream — provider down, or connection limit reached)"
         else now.descr
-        // Progress through the current programme.
-        val nowSec = System.currentTimeMillis() / 1000
         if (now.startTs > 0 && now.stopTs > now.startTs) {
             val pct = ((nowSec - now.startTs) * 100 / (now.stopTs - now.startTs)).coerceIn(0L, 100L)
             b.epgProgress.visibility = View.VISIBLE
@@ -169,8 +172,7 @@ class LiveGridActivity : AppCompatActivity() {
         } else {
             b.epgProgress.visibility = View.GONE
         }
-        // Up next.
-        val upcoming = epg.drop(1)
+        val upcoming = if (nowIdx + 1 < epg.size) epg.subList(nowIdx + 1, epg.size) else emptyList()
         b.upNext.removeAllViews()
         b.upNextHeader.visibility = if (upcoming.isEmpty()) View.GONE else View.VISIBLE
         for (e in upcoming) b.upNext.addView(upNextRow(e))
@@ -181,7 +183,7 @@ class LiveGridActivity : AppCompatActivity() {
         row.orientation = android.widget.LinearLayout.HORIZONTAL
         row.setPadding(0, dp(5), 0, dp(5))
         val time = android.widget.TextView(this)
-        time.text = e.start
+        time.text = if (e.startTs > 0) Portal.localTime(e.startTs) else e.start
         time.setTextColor(0xFF19C37D.toInt())
         time.textSize = 13f
         time.width = dp(58)
@@ -312,6 +314,14 @@ class LiveGridActivity : AppCompatActivity() {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun openCatchup(ch: Portal.Channel) {
+        startActivity(
+            Intent(this, CatchupActivity::class.java)
+                .putExtra("chId", ch.id).putExtra("chName", ch.name)
+                .putExtra("chCmd", ch.cmd).putExtra("archiveDays", ch.archiveDays)
+        )
     }
 
     private fun favToast(ch: Portal.Channel) {
