@@ -26,7 +26,6 @@ class KidHomeActivity : AppCompatActivity() {
 
         b.liveBtn.setOnClickListener { openLive() }
         b.moviesBtn.setOnClickListener { startActivity(Intent(this, KidMoviesActivity::class.java)) }
-        b.youtubeBtn.setOnClickListener { startActivity(Intent(this, YouTubeKidsActivity::class.java)) }
 
         connectPortal()
     }
