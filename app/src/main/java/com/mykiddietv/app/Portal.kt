@@ -193,7 +193,7 @@ object Portal {
     fun shortEpg(chId: String): List<EpgItem> {
         val out = ArrayList<EpgItem>()
         try {
-            val body = get("$base?type=itv&action=get_short_epg&ch_id=$chId&size=6&JsHttpRequest=1-xml", true)
+            val body = get("$base?type=itv&action=get_short_epg&ch_id=$chId&size=24&JsHttpRequest=1-xml", true)
             val arr = JSONObject(body).optJSONArray("js") ?: return out
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
@@ -218,27 +218,32 @@ object Portal {
         if (ts <= 0) "" else java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(java.util.Date(ts * 1000))
 
     /**
-     * Full programme schedule for a channel around a given date (yyyy-mm-dd), for catch-up.
-     * Tries the dated table first; if the portal ignores/forbids the date param it falls back to the
-     * channel's whole table (the caller filters to the wanted day by timestamp).
+     * Full programme schedule for a channel on a given local date (yyyy-mm-dd), for catch-up.
+     *
+     * Uses the EPG grid table (`type=epg&action=get_data_table`). The portal keys the requested day
+     * off the `from`/`to` **string** params (it ignores `from_ts`/`to_ts` and `p` for date paging).
+     *
+     * Response shape: `js.data` is an array of *channel* objects (a page of ~10 channels around
+     * [chId]), each `{ch_id, name, …, epg:[…]}`. We find our channel and read its nested `epg` list —
+     * the programmes (NOT the channel rows) carry start_timestamp / t_time / mark_archive.
      */
     fun epgForDate(chId: String, dateYmd: String): List<EpgItem> {
-        val dated = fetchSimpleTable(chId, "&date=$dateYmd")
-        if (dated.isNotEmpty()) return dated
-        return fetchSimpleTable(chId, "")
-    }
-
-    private fun fetchSimpleTable(chId: String, extra: String): List<EpgItem> {
         val out = ArrayList<EpgItem>()
         try {
-            var page = 1
-            while (page <= 12) {
-                val body = get("$base?type=itv&action=get_simple_data_table&ch_id=$chId$extra&p=$page&JsHttpRequest=1-xml", true)
-                // `js` can be a plain array (like get_short_epg) or an object with a "data" array.
-                val arr = jsArray(body) ?: break
-                if (arr.length() == 0) break
-                for (i in 0 until arr.length()) {
-                    val o = arr.optJSONObject(i) ?: continue
+            val dayFmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            val startMs = dayFmt.parse(dateYmd)?.time ?: return out   // local midnight
+            val endMs = startMs + 86_400_000L - 1000L
+            val from = URLEncoder.encode("$dateYmd 00:00:00", "UTF-8")
+            val to = URLEncoder.encode("$dateYmd 23:59:59", "UTF-8")
+            val url = "$base?type=epg&action=get_data_table&ch_id=$chId&fav=0" +
+                "&from_ts=$startMs&to_ts=$endMs&from=$from&to=$to&JsHttpRequest=1-xml"
+            val data = JSONObject(get(url, true)).optJSONObject("js")?.optJSONArray("data") ?: return out
+            for (i in 0 until data.length()) {
+                val chObj = data.optJSONObject(i) ?: continue
+                if (chObj.optString("ch_id") != chId && chObj.optString("id") != chId) continue
+                val epg = chObj.optJSONArray("epg") ?: continue
+                for (k in 0 until epg.length()) {
+                    val o = epg.optJSONObject(k) ?: continue
                     out.add(
                         EpgItem(
                             name = o.optString("name"),
@@ -251,26 +256,26 @@ object Portal {
                         )
                     )
                 }
-                // Paging info only exists when js is an object; otherwise it's a single-shot array.
-                val jsObj = try { JSONObject(body).optJSONObject("js") } catch (_: Exception) { null } ?: break
-                val total = jsObj.optInt("total_items", arr.length())
-                val per = jsObj.optInt("max_page_items", arr.length()).coerceAtLeast(1)
-                if (page >= Math.ceil(total.toDouble() / per).toInt()) break
-                page++
+                break   // found our channel — the rest of the page is neighbouring channels
             }
         } catch (_: Exception) {}
         return out
     }
 
     /**
-     * Resolve a catch-up (archive) stream for a programme that started at [startTs].
-     * Standard Flussonic/Ministra approach: resolve the live link, then request the archive via utc.
+     * Resolve a catch-up (archive) stream for a programme that started at [startTs] and ran
+     * [durationSec] seconds. Flussonic DVR: take the live HLS link and swap its playlist filename for
+     * `archive-<start>-<duration>.m3u8`, preserving the auth token query string.
      */
-    fun archiveLink(channelCmd: String, startTs: Long): String? {
+    fun archiveLink(channelCmd: String, startTs: Long, durationSec: Long): String? {
         val live = resolve("itv", channelCmd) ?: return null
-        val now = System.currentTimeMillis() / 1000
-        val sep = if (live.contains("?")) "&" else "?"
-        return "$live${sep}utc=$startTs&lutc=$now"
+        val dur = if (durationSec > 0) durationSec else 3600
+        val path = live.substringBefore("?")
+        val query = if (live.contains("?")) live.substringAfter("?") else ""
+        val slash = path.lastIndexOf('/')
+        if (slash < 0) return null
+        val archive = path.substring(0, slash + 1) + "archive-$startTs-$dur.m3u8"
+        return if (query.isNotEmpty()) "$archive?$query" else archive
     }
 
     fun vodCategories(): List<VodCat> {
@@ -286,13 +291,13 @@ object Portal {
         return out
     }
 
-    /** @return Pair(items, totalPages) */
-    fun vodList(catId: String, page: Int): Pair<List<VodItem>, Int> {
+    /** @return Pair(items, totalPages). [sortby] is the portal's server-side order ("added" or "name"). */
+    fun vodList(catId: String, page: Int, sortby: String = "added"): Pair<List<VodItem>, Int> {
         val out = ArrayList<VodItem>()
         var pages = 1
         try {
             val body = get(
-                "$base?type=vod&action=get_ordered_list&category=$catId&p=$page&sortby=added&JsHttpRequest=1-xml",
+                "$base?type=vod&action=get_ordered_list&category=$catId&p=$page&sortby=$sortby&JsHttpRequest=1-xml",
                 true
             )
             val js = JSONObject(body).optJSONObject("js") ?: return Pair(out, pages)

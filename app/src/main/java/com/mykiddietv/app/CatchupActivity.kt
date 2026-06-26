@@ -37,7 +37,9 @@ class CatchupActivity : AppCompatActivity() {
         chId = intent.getStringExtra("chId") ?: ""
         chName = intent.getStringExtra("chName") ?: "Catch-up"
         chCmd = intent.getStringExtra("chCmd") ?: ""
-        val days = intent.getIntExtra("archiveDays", 0).let { if (it > 0) it else 7 }
+        // The intent carries tv_archive_duration, which the portal reports in HOURS (e.g. 120 = 5 days).
+        val archiveHours = intent.getIntExtra("archiveDays", 0)
+        val days = if (archiveHours > 0) Math.ceil(archiveHours / 24.0).toInt().coerceAtLeast(1) else 7
         b.title.text = "🕐  $chName"
         dates = buildDates(days)
         b.list.layoutManager = LinearLayoutManager(this)
@@ -107,13 +109,16 @@ class CatchupActivity : AppCompatActivity() {
         b.status.visibility = View.VISIBLE
         b.status.text = "Opening “${e.name}”…"
         io.execute {
-            val url = Portal.archiveLink(chCmd, e.startTs)
+            val durationSec = if (e.stopTs > e.startTs) e.stopTs - e.startTs else 3600
+            val url = Portal.archiveLink(chCmd, e.startTs, durationSec)
             runOnUiThread {
                 if (url.isNullOrEmpty()) {
                     b.status.visibility = View.VISIBLE
                     b.status.text = "Couldn't open “${e.name}” — catch-up may not be available."
                 } else {
                     b.status.visibility = View.GONE
+                    // Archive is a finite, seekable VOD. Play it in the VLC player's archive mode,
+                    // which shows a slider + skip controls. VLC seeks HLS-VOD reliably (ExoPlayer stalls).
                     LiveVlcActivity.kidMode = false
                     LiveVlcActivity.liveChannels = emptyList()
                     startActivity(
@@ -121,6 +126,8 @@ class CatchupActivity : AppCompatActivity() {
                             .putExtra("url", url)
                             .putExtra("title", "${e.start}  ${e.name}")
                             .putExtra("chIndex", -1)
+                            .putExtra("archive", true)
+                            .putExtra("durationSec", durationSec) // true programme length → accurate scrubbing
                     )
                 }
             }

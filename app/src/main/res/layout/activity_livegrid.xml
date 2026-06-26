@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0b0f14">
+    android:background="@drawable/window_bg">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -43,6 +43,19 @@
                 android:text="🔍"
                 android:textSize="20sp"
                 android:padding="10dp"
+                android:focusable="true"
+                android:clickable="true"
+                android:background="@drawable/item_bg" />
+
+            <TextView
+                android:id="@+id/sortBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="⇅ #"
+                android:textSize="15sp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="10dp"
                 android:focusable="true"
                 android:clickable="true"
                 android:background="@drawable/item_bg" />
@@ -144,7 +157,7 @@
             android:id="@+id/previewFrame"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="0.62"
+            android:layout_weight="0.60"
             android:focusable="true"
             android:clickable="true"
             android:background="@drawable/preview_bg">
@@ -171,11 +184,21 @@
             android:id="@+id/epgPanel"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="0.38"
+            android:layout_weight="0.40"
             android:layout_marginTop="10dp"
             android:orientation="vertical"
             android:background="@drawable/preview_bg"
             android:padding="14dp">
+
+            <LinearLayout
+                android:id="@+id/nowCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:focusable="true"
+                android:clickable="true"
+                android:background="@drawable/epg_row_bg"
+                android:padding="7dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -189,38 +212,38 @@
                     android:layout_height="wrap_content"
                     android:text="● LIVE"
                     android:textColor="#19c37d"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/nowTime"
+                    android:id="@+id/nowTitle"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:gravity="end"
-                    android:textColor="#9fb0c0"
-                    android:textSize="13sp"
+                    android:layout_marginStart="8dp"
+                    android:textColor="#ffffff"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="" />
+
+                <TextView
+                    android:id="@+id/nowTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:textColor="#19c37d"
+                    android:textSize="12sp"
                     android:text="" />
             </LinearLayout>
-
-            <TextView
-                android:id="@+id/nowTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textColor="#ffffff"
-                android:textSize="17sp"
-                android:textStyle="bold"
-                android:maxLines="2"
-                android:ellipsize="end"
-                android:text="" />
 
             <ProgressBar
                 android:id="@+id/epgProgress"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="6dp"
-                android:layout_marginTop="8dp"
+                android:layout_height="5dp"
+                android:layout_marginTop="6dp"
                 android:max="100"
                 android:progress="0"
                 android:progressDrawable="@drawable/progress_horizontal_green" />
@@ -229,43 +252,34 @@
                 android:id="@+id/nowDesc"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:textColor="#aab7c4"
-                android:textSize="13sp"
-                android:lineSpacingExtra="2dp"
-                android:maxLines="3"
+                android:textSize="12sp"
+                android:maxLines="1"
                 android:ellipsize="end"
+                android:visibility="gone"
                 android:text="" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="12dp"
-                android:background="#1b2733" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/upNextHeader"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="UP NEXT"
+                android:layout_marginTop="8dp"
+                android:text="UP NEXT  ·  tap a show for details"
                 android:textColor="#5a6675"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
-            <ScrollView
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/upNextList"
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:layout_marginTop="6dp"
-                android:scrollbars="none">
-
-                <LinearLayout
-                    android:id="@+id/upNext"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
-            </ScrollView>
+                android:clipToPadding="false"
+                android:nestedScrollingEnabled="true"
+                android:scrollbars="vertical" />
         </LinearLayout>
     </LinearLayout>
     </LinearLayout>
@@ -277,7 +291,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:background="#0b0f14"
+        android:background="@drawable/window_bg"
         android:clickable="true"
         android:focusable="true"
         android:visibility="gone">

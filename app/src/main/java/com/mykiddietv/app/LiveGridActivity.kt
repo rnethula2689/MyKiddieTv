@@ -28,10 +28,13 @@ class LiveGridActivity : AppCompatActivity() {
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var b: ActivityLivegridBinding
     private lateinit var adapter: ChannelGridAdapter
+    private val epgAdapter = EpgPreviewAdapter()
+    private var nowItem: Portal.EpgItem? = null   // current programme, for the NOW-card synopsis tap
 
     private var libVlc: LibVLC? = null
     private var mp: MediaPlayer? = null
-    private var all = listOf<Portal.Channel>()
+    private var all = listOf<Portal.Channel>()          // current (sorted/filtered) view
+    private var originalOrder = listOf<Portal.Channel>() // provider order, for the "Default" sort
     private var current: Portal.Channel? = null
     private var currentUrl: String? = null
     private var currentUrlId: String? = null
@@ -45,7 +48,8 @@ class LiveGridActivity : AppCompatActivity() {
         setContentView(b.root)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // preview is live video
 
-        all = channels
+        originalOrder = channels
+        all = sortedChannels()
         b.title.text = gridTitle
 
         val vlc = LibVLC(this, arrayListOf("--network-caching=1500", "--http-reconnect", "--no-drop-late-frames", "--no-skip-frames"))
@@ -56,8 +60,15 @@ class LiveGridActivity : AppCompatActivity() {
         b.list.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
         b.list.adapter = adapter
 
+        b.upNextList.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+        b.upNextList.adapter = epgAdapter
+        b.upNextList.isFocusable = false // rows handle focus; the list itself shouldn't trap it
+
         b.previewFrame.setOnClickListener { openFullscreen() }
+        b.nowCard.setOnClickListener { nowItem?.let { showEpgDetail(it) } } // NOW programme → full synopsis
         b.searchBtn.setOnClickListener { toggleSearch() }
+        b.sortBtn.setOnClickListener { cycleSort() }
+        updateSortBtn()
         b.menuBtn.setOnClickListener { showMenu() }
         if (gridTitle == "Favourites") {
             b.clearFavBtn.visibility = View.VISIBLE
@@ -108,7 +119,10 @@ class LiveGridActivity : AppCompatActivity() {
             if (mine != seq) return@execute // superseded by a newer selection
             val url = Portal.createLink(ch.cmd)
             if (mine != seq) return@execute
-            val epg = Portal.shortEpg(ch.id)
+            // The real guide lives in the day table (get_data_table); get_short_epg returns
+            // "no guide" placeholders for many channels on this portal. Fall back to it only if empty.
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            val epg = Portal.epgForDate(ch.id, today).ifEmpty { Portal.shortEpg(ch.id) }
             runOnUiThread {
                 if (mine != seq || current != ch) return@runOnUiThread
                 currentUrl = url
@@ -140,8 +154,10 @@ class LiveGridActivity : AppCompatActivity() {
         b.nowTime.text = ""
         b.nowTitle.text = msg
         b.nowDesc.text = ""
+        b.nowDesc.visibility = View.GONE
+        nowItem = null
         b.upNextHeader.visibility = View.GONE
-        b.upNext.removeAllViews()
+        epgAdapter.submit(emptyList())
     }
 
     /** Render the guide for [ch]: a NOW card (title, time, live progress, description) + an Up Next list. */
@@ -154,8 +170,11 @@ class LiveGridActivity : AppCompatActivity() {
             b.nowDesc.text = if (url.isNullOrEmpty())
                 "No stream — the provider may be down, or another device is using your connection."
             else "No program guide for this channel."
+            b.nowTime.text = ""
+            b.nowDesc.visibility = View.VISIBLE
+            nowItem = null
             b.upNextHeader.visibility = View.GONE
-            b.upNext.removeAllViews()
+            epgAdapter.submit(emptyList())
             return
         }
         val nowSec = System.currentTimeMillis() / 1000
@@ -164,12 +183,19 @@ class LiveGridActivity : AppCompatActivity() {
         if (nowIdx < 0) nowIdx = epg.indexOfLast { it.startTs in 1..nowSec }
         if (nowIdx < 0) nowIdx = 0
         val now = epg[nowIdx]
+        nowItem = now
         b.nowBadge.visibility = View.VISIBLE
-        b.nowTime.text = if (now.startTs > 0) "${Portal.localTime(now.startTs)} – ${Portal.localTime(now.stopTs)}" else "${now.start} – ${now.end}"
+        val range = if (now.startTs > 0) "${Portal.localTime(now.startTs)} – ${Portal.localTime(now.stopTs)}" else "${now.start} – ${now.end}"
         b.nowTitle.text = now.name
-        b.nowDesc.text = if (url.isNullOrEmpty())
-            "(no stream — provider down, or connection limit reached)"
-        else now.descr
+        // Single-line card: name + time + ⓘ (tap the card for the full synopsis).
+        if (url.isNullOrEmpty()) {
+            b.nowTime.text = "ⓘ"
+            b.nowDesc.visibility = View.VISIBLE
+            b.nowDesc.text = "(no stream — provider down, or connection limit reached)"
+        } else {
+            b.nowTime.text = "$range   ⓘ"
+            b.nowDesc.visibility = View.GONE
+        }
         if (now.startTs > 0 && now.stopTs > now.startTs) {
             val pct = ((nowSec - now.startTs) * 100 / (now.stopTs - now.startTs)).coerceIn(0L, 100L)
             b.epgProgress.visibility = View.VISIBLE
@@ -178,32 +204,48 @@ class LiveGridActivity : AppCompatActivity() {
             b.epgProgress.visibility = View.GONE
         }
         val upcoming = if (nowIdx + 1 < epg.size) epg.subList(nowIdx + 1, epg.size) else emptyList()
-        b.upNext.removeAllViews()
         b.upNextHeader.visibility = if (upcoming.isEmpty()) View.GONE else View.VISIBLE
-        for (e in upcoming) b.upNext.addView(upNextRow(e))
+        epgAdapter.submit(upcoming)
+        b.upNextList.scrollToPosition(0)
     }
 
-    private fun upNextRow(e: Portal.EpgItem): View {
-        val row = android.widget.LinearLayout(this)
-        row.orientation = android.widget.LinearLayout.HORIZONTAL
-        row.setPadding(0, dp(5), 0, dp(5))
-        val time = android.widget.TextView(this)
-        time.text = if (e.startTs > 0) Portal.localTime(e.startTs) else e.start
-        time.setTextColor(0xFF19C37D.toInt())
-        time.textSize = 13f
-        time.width = dp(58)
-        val title = android.widget.TextView(this)
-        title.text = e.name
-        title.setTextColor(0xFFD7E0EA.toInt())
-        title.textSize = 13f
-        title.maxLines = 1
-        title.ellipsize = android.text.TextUtils.TruncateAt.END
-        row.addView(time)
-        row.addView(title)
-        return row
+    private fun durLabel(e: Portal.EpgItem): String {
+        if (e.startTs > 0 && e.stopTs > e.startTs) {
+            val mins = ((e.stopTs - e.startTs) / 60).toInt()
+            return if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m"
+        }
+        return ""
     }
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    /** Tap an upcoming programme → show its full details (time + synopsis). */
+    private fun showEpgDetail(e: Portal.EpgItem) {
+        val time = if (e.startTs > 0) "${Portal.localTime(e.startTs)} – ${Portal.localTime(e.stopTs)}"
+                   else "${e.start} – ${e.end}"
+        val msg = if (e.descr.isNotBlank()) "$time\n\n${e.descr}" else time
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(e.name)
+            .setMessage(msg)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private inner class EpgPreviewAdapter :
+        androidx.recyclerview.widget.RecyclerView.Adapter<EpgPreviewAdapter.VH>() {
+        private var items = listOf<Portal.EpgItem>()
+        fun submit(l: List<Portal.EpgItem>) { items = l; notifyDataSetChanged() }
+        inner class VH(val v: com.mykiddietv.app.databinding.ItemEpgPreviewBinding) :
+            androidx.recyclerview.widget.RecyclerView.ViewHolder(v.root)
+        override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int) =
+            VH(com.mykiddietv.app.databinding.ItemEpgPreviewBinding.inflate(layoutInflater, parent, false))
+        override fun getItemCount() = items.size
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            val e = items[position]
+            holder.v.time.text = if (e.startTs > 0) Portal.localTime(e.startTs) else e.start
+            holder.v.name.text = e.name
+            holder.v.dur.text = durLabel(e)
+            holder.v.root.setOnClickListener { showEpgDetail(e) }
+        }
+    }
 
     private fun openFullscreen() {
         val ch = current ?: return
@@ -243,6 +285,32 @@ class LiveGridActivity : AppCompatActivity() {
     private fun filter(q: String) {
         val query = q.trim()
         adapter.submit(if (query.isEmpty()) all else all.filter { it.name.contains(query, ignoreCase = true) })
+    }
+
+    /** Channels in the chosen order: provider order (Default), or by name A–Z / Z–A. */
+    private fun sortedChannels(): List<Portal.Channel> = when (Configs.sortMode(this)) {
+        Configs.SORT_AZ -> originalOrder.sortedBy { it.name.trim().lowercase() }
+        Configs.SORT_ZA -> originalOrder.sortedByDescending { it.name.trim().lowercase() }
+        else -> originalOrder
+    }
+
+    /** ⇅ button: cycle Default → A–Z → Z–A, re-sort in place, keep any active filter. */
+    private fun cycleSort() {
+        Configs.cycleSortMode(this)
+        all = sortedChannels()
+        updateSortBtn()
+        val q = b.search.text?.toString()?.trim().orEmpty()
+        if (q.isNotEmpty()) filter(q) else adapter.submit(all)
+        b.list.scrollToPosition(0)
+        b.list.post { b.list.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
+    }
+
+    private fun updateSortBtn() {
+        b.sortBtn.text = when (Configs.sortMode(this)) {
+            Configs.SORT_AZ -> "⇅ A–Z"
+            Configs.SORT_ZA -> "⇅ Z–A"
+            else -> "⇅ #"
+        }
     }
 
     private fun buildAzBar() {
