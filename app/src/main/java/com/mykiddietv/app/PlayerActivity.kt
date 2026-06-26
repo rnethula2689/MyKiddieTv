@@ -131,8 +131,7 @@ class PlayerActivity : AppCompatActivity() {
 
         b.playerView.controllerShowTimeoutMs = 6000
         b.playerView.requestFocus()
-        goImmersive()
-        KidGuard.immersive(this)
+        goImmersive() // same immersive as Stalker TV; KidGuard.immersive (edge-to-edge) clipped the time bar
         screenLock = ScreenLock(this)
     }
 
