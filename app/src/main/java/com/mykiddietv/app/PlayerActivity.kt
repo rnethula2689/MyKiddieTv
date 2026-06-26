@@ -81,7 +81,8 @@ class PlayerActivity : AppCompatActivity() {
         b.playerView.setControllerVisibilityListener(
             PlayerView.ControllerVisibilityListener { visibility ->
                 b.topBar.visibility = visibility
-                if (visibility != View.VISIBLE) {
+                if (visibility == View.VISIBLE) hideDefaultGear()
+                else {
                     b.volumePanel.visibility = View.GONE
                     b.brightnessPanel.visibility = View.GONE
                 }
@@ -132,7 +133,14 @@ class PlayerActivity : AppCompatActivity() {
         b.playerView.controllerShowTimeoutMs = 6000
         b.playerView.requestFocus()
         goImmersive() // same immersive as Stalker TV; KidGuard.immersive (edge-to-edge) clipped the time bar
+        b.playerView.post { hideDefaultGear() }
         screenLock = ScreenLock(this)
+    }
+
+    /** The default ExoPlayer settings gear (playback speed / track menu) is redundant now that Speed
+     *  and Audio live in the top control cluster — hide it whenever the controller appears. */
+    private fun hideDefaultGear() {
+        b.playerView.findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)?.visibility = View.GONE
     }
 
     /** True fullscreen — hide the status & navigation bars so the player (and its bottom time bar)
