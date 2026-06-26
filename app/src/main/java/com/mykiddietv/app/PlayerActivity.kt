@@ -70,6 +70,7 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(b.root)
+        PipService.stop(this) // opening fullscreen playback closes any existing pop-up
 
         videoUrl = intent.getStringExtra("url") ?: run { finish(); return }
         titleText = intent.getStringExtra("title") ?: ""
@@ -179,6 +180,12 @@ class PlayerActivity : AppCompatActivity() {
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
             .setLoadControl(loadControl)
             .build()
+        // Respect audio focus (pause when another app takes over audio).
+        p.setAudioAttributes(
+            androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
+            true
+        )
         p.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         p.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -524,6 +531,37 @@ class PlayerActivity : AppCompatActivity() {
         updateSpeedBtn()
         b.speedBtn.setOnClickListener { showSpeedDialog() }
         b.audioBtn.setOnClickListener { showAudioDialog() }
+        // Pop-up player: parent side only — never in the locked kid sandbox.
+        b.pipBtn.visibility = if (kidMode) View.GONE else View.VISIBLE
+        b.pipBtn.setOnClickListener { enterPipFlow() }
+    }
+
+    /** Shrink to the floating pop-up player (parent side only). */
+    private fun enterPipFlow() {
+        if (kidMode) return
+        if (!PipLauncher.hasPermission(this)) { PipLauncher.requestPermission(this); return }
+        val pos = player?.currentPosition ?: 0L
+        saveResume()
+        player?.playWhenReady = false
+        PipService.start(this, videoUrl, titleText, resumeSource, resumeId, resumePoster, pos, isLive)
+        finish()
+    }
+
+    // Swipe down on the video → shrink to the pop-up (PiP), YouTube-style. Disabled in kid mode.
+    private val pipGesture by lazy {
+        android.view.GestureDetector(this, object : android.view.GestureDetector.SimpleOnGestureListener() {
+            override fun onFling(e1: android.view.MotionEvent?, e2: android.view.MotionEvent, vx: Float, vy: Float): Boolean {
+                if (!kidMode && e1 != null && vy > 0 && (e2.y - e1.y) > 180f && Math.abs(e2.y - e1.y) > Math.abs(e2.x - e1.x)) {
+                    enterPipFlow(); return true
+                }
+                return false
+            }
+        })
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        pipGesture.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun openPanel(panel: View) {

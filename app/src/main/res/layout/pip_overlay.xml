@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The floating pop-up player window (added to WindowManager as a system overlay).
+     TextureView surface so it renders correctly inside an overlay window. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/pipRoot"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/pipPlayer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:use_controller="false"
+        app:surface_type="texture_view"
+        app:resize_mode="fit" />
+
+    <!-- Transparent layer that captures drag (move) and tap (expand to fullscreen). -->
+    <View
+        android:id="@+id/dragArea"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Mini controls: play/pause + mute, available while minimized. -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="4dp"
+        android:orientation="horizontal"
+        android:background="#99000000"
+        android:padding="2dp">
+
+        <TextView
+            android:id="@+id/pipPlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⏸"
+            android:textColor="#ffffff"
+            android:textSize="18sp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:clickable="true" />
+
+        <TextView
+            android:id="@+id/pipMute"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🔊"
+            android:textColor="#ffffff"
+            android:textSize="18sp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="4dp"
+            android:clickable="true" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/pipClose"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:text="✕"
+        android:textColor="#ffffff"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:background="#99000000"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="2dp"
+        android:clickable="true" />
+</FrameLayout>
