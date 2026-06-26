@@ -1,7 +1,10 @@
 package com.mykiddietv.app
 
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
@@ -15,6 +18,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.mykiddietv.app.databinding.ActivityPlayerBinding
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
@@ -43,10 +47,23 @@ class PlayerActivity : AppCompatActivity() {
     private var forceSoftware = false
     private var screenLock: ScreenLock? = null
 
+    private val aspectModes = listOf("Fit", "Zoom", "Stretch")
+    private var aspectIdx = 0
+    private var nightOn = false
+    private lateinit var am: AudioManager
+    private var preMuteVol = -1
+    private var epList: List<PlaylistItem> = emptyList()
+    private var epIndex = -1
+
+    data class PlaylistItem(val title: String, val resumeId: String, val poster: String, val source: String)
+
     companion object {
         var liveChannels: List<Portal.Channel> = emptyList()
         // Set by the launching screen; hides parent-only menu items for kids.
         var kidMode: Boolean = false
+        // Set just before launching an episode so the player can auto-advance to the next one.
+        var playlist: List<PlaylistItem> = emptyList()
+        var playlistIndex = -1
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,10 +79,23 @@ class PlayerActivity : AppCompatActivity() {
         // Top bar (title + Subtitles) shows/hides with the playback controls.
         b.title.text = titleText
         b.playerView.setControllerVisibilityListener(
-            PlayerView.ControllerVisibilityListener { visibility -> b.topBar.visibility = visibility }
+            PlayerView.ControllerVisibilityListener { visibility ->
+                b.topBar.visibility = visibility
+                b.leftControls.visibility = visibility
+                if (visibility != View.VISIBLE) {
+                    b.volumePanel.visibility = View.GONE
+                    b.brightnessPanel.visibility = View.GONE
+                }
+            }
         )
         b.subBtn.setOnClickListener { searchSubtitles() }
         b.menuBtn.setOnClickListener { showMenu() }
+        wireQuickControls()
+
+        // Episode playlist (for autoplay-next), handed over via the companion then consumed once.
+        epList = playlist
+        epIndex = playlistIndex
+        playlist = emptyList(); playlistIndex = -1
 
         isLive = intent.getBooleanExtra("live", false)
         chIndex = intent.getIntExtra("chIndex", -1)
@@ -138,6 +168,9 @@ class PlayerActivity : AppCompatActivity() {
                 if (isPlaying) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_ENDED) maybeAutoplayNext()
+            }
         })
         return p
     }
@@ -189,14 +222,19 @@ class PlayerActivity : AppCompatActivity() {
     private var menuDialog: AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
+        val autoLabel = if (Configs.autoplay(this)) "🔁   Autoplay next: ON" else "🔁   Autoplay next: OFF"
         val items = if (kidMode)
-            arrayOf("💬   Subtitles", "ℹ️   About")
+            arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf("💬   Subtitles", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
+                    action.contains("Autoplay") -> {
+                        Configs.setAutoplay(this, !Configs.autoplay(this))
+                        Toast.makeText(this, if (Configs.autoplay(this)) "Autoplay next: ON" else "Autoplay next: OFF", Toast.LENGTH_SHORT).show()
+                    }
                     action.contains("Subtitles") -> searchSubtitles()
                     action.contains("Settings") -> startActivity(android.content.Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(android.content.Intent(this, AppUpdatesActivity::class.java))
@@ -295,6 +333,115 @@ class PlayerActivity : AppCompatActivity() {
                 Toast.makeText(this, "Subtitle applied ✓", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /** When an episode ends, advance to the next one in the season (if autoplay is on). */
+    private fun maybeAutoplayNext() {
+        if (isLive || !Configs.autoplay(this)) return
+        if (epList.isEmpty() || epIndex < 0 || epIndex + 1 >= epList.size) return
+        saveResume()
+        val next = epList[epIndex + 1]
+        epIndex += 1
+        titleText = next.title
+        b.title.text = next.title
+        resumeId = next.resumeId
+        resumeSource = next.source
+        resumePoster = next.poster
+        forceSoftware = false
+        Toast.makeText(this, "▶  Next: ${next.title}", Toast.LENGTH_SHORT).show()
+        io.execute {
+            val url = Downloads.resolveSource(next.source)
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                if (url.isNullOrEmpty()) {
+                    Toast.makeText(this, "Couldn't load the next episode.", Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                videoUrl = url
+                val p = player ?: return@runOnUiThread
+                p.setMediaItem(MediaItem.fromUri(url))
+                p.prepare()
+                p.playWhenReady = true
+            }
+        }
+    }
+
+    /** Wire the top-left quick controls: aspect ratio, volume (+ mute), brightness (+ night mode). */
+    private fun wireQuickControls() {
+        am = ScreenControls.audio(this)
+        b.aspectBtn.text = "⤢  ${aspectModes[aspectIdx]}"
+        b.aspectBtn.setOnClickListener { cycleAspect() }
+
+        b.volSeek.max = ScreenControls.maxVolume(am)
+        refreshVol()
+        b.volSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) { ScreenControls.setVolume(am, progress); updateMuteLabel() }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
+        b.volBtn.setOnClickListener { refreshVol(); openPanel(b.volumePanel) }
+        b.muteBtn.setOnClickListener { toggleMute() }
+
+        b.brightSeek.max = 100
+        b.brightSeek.progress = (ScreenControls.brightness(window) * 100).toInt()
+        b.brightSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) ScreenControls.setBrightness(window, progress / 100f)
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
+        b.brightBtn.setOnClickListener {
+            b.brightSeek.progress = (ScreenControls.brightness(window) * 100).toInt()
+            openPanel(b.brightnessPanel)
+        }
+        b.nightBtn.setOnClickListener { toggleNight() }
+    }
+
+    private fun openPanel(panel: View) {
+        val show = panel.visibility != View.VISIBLE
+        b.volumePanel.visibility = View.GONE
+        b.brightnessPanel.visibility = View.GONE
+        panel.visibility = if (show) View.VISIBLE else View.GONE
+        b.playerView.controllerShowTimeoutMs = if (show) 0 else 6000
+        b.playerView.showController()
+    }
+
+    private fun cycleAspect() {
+        aspectIdx = (aspectIdx + 1) % aspectModes.size
+        b.playerView.resizeMode = when (aspectModes[aspectIdx]) {
+            "Zoom" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            "Stretch" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+        b.aspectBtn.text = "⤢  ${aspectModes[aspectIdx]}"
+    }
+
+    private fun toggleMute() {
+        if (ScreenControls.volume(am) > 0) {
+            preMuteVol = ScreenControls.volume(am)
+            ScreenControls.setVolume(am, 0)
+        } else {
+            ScreenControls.setVolume(am, if (preMuteVol > 0) preMuteVol else ScreenControls.maxVolume(am) / 2)
+        }
+        refreshVol()
+    }
+
+    private fun refreshVol() {
+        b.volSeek.progress = ScreenControls.volume(am)
+        updateMuteLabel()
+    }
+
+    private fun updateMuteLabel() {
+        b.muteBtn.text = if (ScreenControls.volume(am) == 0) "🔈  Unmute" else "🔇  Mute"
+    }
+
+    private fun toggleNight() {
+        nightOn = !nightOn
+        b.nightOverlay.visibility = if (nightOn) View.VISIBLE else View.GONE
+        b.nightBtn.text = if (nightOn) "🌙  Night mode: ON" else "🌙  Night mode"
     }
 
     private fun saveResume() {
