@@ -963,6 +963,9 @@ class ChannelsActivity : AppCompatActivity() {
         liveCatAdapter.submit(rows)
         if (!liveAzBuilt) { buildLiveAzBar(); liveAzBuilt = true }
         b.liveCatOverlay.visibility = View.VISIBLE
+        // Stop the remote from focusing the home content behind the overlay (keeps A–Z + list reachable).
+        b.contentRoot.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        b.bottomNav.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
         b.liveCatList.post { b.liveCatList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: b.liveCatList.requestFocus() }
     }
 
@@ -990,7 +993,11 @@ class ChannelsActivity : AppCompatActivity() {
         b.liveCatList.post { b.liveCatList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() }
     }
 
-    private fun hideLiveCategories() { b.liveCatOverlay.visibility = View.GONE }
+    private fun hideLiveCategories() {
+        b.liveCatOverlay.visibility = View.GONE
+        b.contentRoot.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+        b.bottomNav.descendantFocusability = android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
+    }
 
     private fun showContinueWatching() {
         val all = Resume.all(this)
