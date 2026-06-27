@@ -534,6 +534,8 @@ class PlayerActivity : AppCompatActivity() {
         // Pop-up player: parent side only — never in the locked kid sandbox.
         b.pipBtn.visibility = if (kidMode) View.GONE else View.VISIBLE
         b.pipBtn.setOnClickListener { enterPipFlow() }
+        // On TV, volume/brightness are the TV's, and overlay PiP isn't supported; hide them.
+        if (Tv.isTv(this)) { b.pipBtn.visibility = View.GONE; b.volBtn.visibility = View.GONE; b.brightBtn.visibility = View.GONE }
     }
 
     /** Shrink to the floating pop-up player (parent side only). */
