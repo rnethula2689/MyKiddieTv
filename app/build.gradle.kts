@@ -21,6 +21,8 @@ android {
         versionCode = 1
         versionName = "1.0"
         buildConfigField("String", "BUILD_TIME", "\"$buildTime\"")
+        // TMDb v3 API key, injected from the CI secret (gradle -PtmdbKey=...); empty in local builds.
+        buildConfigField("String", "TMDB_KEY", "\"${project.findProperty("tmdbKey") ?: ""}\"")
         // libVLC ships native libs per ABI; Fire/Android devices are ARM. Drop x86 to keep the APK small.
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
