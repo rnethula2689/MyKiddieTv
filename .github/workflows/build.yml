@@ -31,6 +31,7 @@ jobs:
 
       - name: Stamp unique build number + version file (distinguishable, installable over the last, update-aware)
         run: |
+          sed -i 's/\r$//' app/build.gradle.kts   # tolerate CRLF so the $-anchored stamp below matches
           sed -i "s/versionCode = 1$/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
           sed -i "s/versionName = \"1.0\"/versionName = \"1.0.${{ github.run_number }}\"/" app/build.gradle.kts
           echo "{\"versionCode\": ${{ github.run_number }}, \"versionName\": \"1.0.${{ github.run_number }}\"}" > latest_version.json
