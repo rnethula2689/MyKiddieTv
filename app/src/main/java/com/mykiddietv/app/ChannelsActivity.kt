@@ -604,8 +604,8 @@ class ChannelsActivity : AppCompatActivity() {
         val cur = backStack.lastOrNull()
         if (cur?.kind == SearchKind.VOD_CATEGORY) {
             val hadSearch = b.search.text.isNotEmpty()
-            if (hadSearch || vodFilterAttr != null || vodLetter != null) {
-                vodFilterAttr = null; vodFilterVal = null; vodLetter = null
+            if (hadSearch || vodFilterAttr != null) {
+                vodFilterAttr = null; vodFilterVal = null
                 updateVodButtons()
                 if (hadSearch) { b.search.setText(""); b.searchRow.visibility = View.GONE } // → vodSearchUi("") reloads full folder
                 else renderVodItems(0)
