@@ -35,6 +35,12 @@ class KidHomeActivity : AppCompatActivity() {
         // Lock the kid in: hide system bars and pin the app (Home/Recents disabled while pinned).
         KidGuard.immersive(this)
         KidGuard.startLock(this)
+        KidLimits.onResume(this) // screen-time: enforce limit/bedtime + start counting
+    }
+
+    override fun onPause() {
+        super.onPause()
+        KidLimits.onPause(this)
     }
 
     /** Back from the kid home returns to the profile picker (passcode-gated if one is set) —

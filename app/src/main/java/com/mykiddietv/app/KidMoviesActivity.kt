@@ -36,6 +36,12 @@ class KidMoviesActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         KidGuard.immersive(this)
+        KidLimits.onResume(this)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        KidLimits.onPause(this)
     }
 
     private fun connectPortal() {

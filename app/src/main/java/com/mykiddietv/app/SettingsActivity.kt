@@ -59,6 +59,11 @@ class SettingsActivity : AppCompatActivity() {
             startActivity(android.content.Intent(this, DiagnosticsActivity::class.java))
         }
 
+        b.kidScreenTimeBtn.setOnClickListener { KidScreenTime.show(this) }
+        b.kidHistoryBtn.setOnClickListener {
+            startActivity(android.content.Intent(this, KidHistoryActivity::class.java))
+        }
+
         b.backupBtn.setOnClickListener {
             try {
                 val f = Backup.writeToFile(this)

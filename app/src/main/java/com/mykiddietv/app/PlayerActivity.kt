@@ -719,6 +719,20 @@ class PlayerActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
+    private var kidHistoryLogged = false
+    override fun onResume() {
+        super.onResume()
+        if (kidMode) {
+            KidLimits.onResume(this)
+            if (!isFinishing && !kidHistoryLogged) { KidHistory.add(this, titleText); kidHistoryLogged = true }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (kidMode) KidLimits.onPause(this)
+    }
+
     override fun onStop() {
         super.onStop()
         saveResume()
