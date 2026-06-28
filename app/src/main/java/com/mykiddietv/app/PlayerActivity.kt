@@ -309,7 +309,7 @@ class PlayerActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf("⏲   Sleep timer", "🎚   Playback settings", "⚠   Report not working", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf(SleepTimer.menuLabel(), "🎚   Playback settings", "⚠   Report not working", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
