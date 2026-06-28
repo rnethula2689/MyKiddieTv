@@ -314,18 +314,12 @@ class PlayerActivity : AppCompatActivity() {
             if (event.action == android.view.KeyEvent.ACTION_UP) showMenu()
             return true
         }
-        // While the volume/brightness panel is open, D-pad up/down adjusts it (volume 0 = mute).
+        // Panel open: the focused slider handles ◀▶, focus nav reaches the Mute/Night button.
+        // Only intercept Back (close); everything else goes to native focus handling.
         if (event.action == android.view.KeyEvent.ACTION_DOWN &&
             (b.volumePanel.visibility == View.VISIBLE || b.brightnessPanel.visibility == View.VISIBLE)) {
-            val vol = b.volumePanel.visibility == View.VISIBLE
-            when (kc) {
-                android.view.KeyEvent.KEYCODE_DPAD_UP -> { if (vol) adjustVol(1) else adjustBright(7); return true }
-                android.view.KeyEvent.KEYCODE_DPAD_DOWN -> { if (vol) adjustVol(-1) else adjustBright(-7); return true }
-                // Center toggles the panel's button (Mute / Night mode) so it's reachable on TV.
-                android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER ->
-                    { if (vol) toggleMute() else toggleNight(); return true }
-                android.view.KeyEvent.KEYCODE_BACK -> { closePanels(); return true }
-            }
+            if (kc == android.view.KeyEvent.KEYCODE_BACK) { closePanels(); return true }
+            return super.dispatchKeyEvent(event)
         }
         if (isLive && event.action == android.view.KeyEvent.ACTION_DOWN) {
             if (kc == android.view.KeyEvent.KEYCODE_DPAD_UP) { switchChannel(-1); return true }
@@ -533,7 +527,10 @@ class PlayerActivity : AppCompatActivity() {
         refreshVol()
         b.volSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser) { volSet(progress); updateMuteLabel() }
+                if (fromUser) {
+                    volSet(progress); updateMuteLabel()
+                    b.volLabel.text = "🔊  Volume  ${if (volMax() > 0) progress * 100 / volMax() else 0}%"
+                }
             }
             override fun onStartTrackingTouch(sb: SeekBar) {}
             override fun onStopTrackingTouch(sb: SeekBar) {}
@@ -545,13 +542,14 @@ class PlayerActivity : AppCompatActivity() {
         b.brightSeek.progress = brightGetPct()
         b.brightSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser) brightSetPct(progress)
+                if (fromUser) { brightSetPct(progress); updateBrightLabel() }
             }
             override fun onStartTrackingTouch(sb: SeekBar) {}
             override fun onStopTrackingTouch(sb: SeekBar) {}
         })
         b.brightBtn.setOnClickListener {
             b.brightSeek.progress = brightGetPct()
+            updateBrightLabel()
             openPanel(b.brightnessPanel)
         }
         b.nightBtn.setOnClickListener { toggleNight() }
@@ -600,6 +598,7 @@ class PlayerActivity : AppCompatActivity() {
         panel.visibility = if (show) View.VISIBLE else View.GONE
         b.playerView.controllerShowTimeoutMs = if (show) 0 else 6000
         b.playerView.showController()
+        if (show) { val sb = if (panel === b.volumePanel) b.volSeek else b.brightSeek; sb.post { sb.requestFocus() } }
     }
 
     private fun cycleAspect() {
@@ -621,7 +620,10 @@ class PlayerActivity : AppCompatActivity() {
     private fun refreshVol() {
         b.volSeek.progress = volGet()
         updateMuteLabel()
+        b.volLabel.text = "🔊  Volume  ${if (volMax() > 0) volGet() * 100 / volMax() else 0}%"
     }
+
+    private fun updateBrightLabel() { b.brightLabel.text = "☀  Brightness  ${brightGetPct()}%" }
 
     private fun updateMuteLabel() {
         val muted = volGet() == 0
@@ -629,12 +631,6 @@ class PlayerActivity : AppCompatActivity() {
         b.volBtn.text = if (muted) "🔇" else "🔊"   // the cluster button shows the mute state on TV
     }
 
-    /** D-pad volume/brightness while a panel is open (TV): up/down adjust, 0 volume = muted. */
-    private fun adjustVol(delta: Int) { volSet(volGet() + delta); refreshVol() }
-    private fun adjustBright(deltaPct: Int) {
-        brightSetPct(brightGetPct() + deltaPct)
-        b.brightSeek.progress = brightGetPct()
-    }
     private fun closePanels() {
         b.volumePanel.visibility = View.GONE
         b.brightnessPanel.visibility = View.GONE
