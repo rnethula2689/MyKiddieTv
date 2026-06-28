@@ -685,11 +685,12 @@ class LiveVlcActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("ℹ️   About")
         else
-            arrayOf("⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("⏲   Sleep timer", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
+                    action.contains("Sleep") -> SleepTimer.showDialog(this)
                     action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)

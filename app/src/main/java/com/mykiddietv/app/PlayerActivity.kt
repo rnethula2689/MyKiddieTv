@@ -279,11 +279,12 @@ class PlayerActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf("💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("⏲   Sleep timer", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
+                    action.contains("Sleep") -> SleepTimer.showDialog(this)
                     action.contains("Autoplay") -> {
                         Configs.setAutoplay(this, !Configs.autoplay(this))
                         Toast.makeText(this, if (Configs.autoplay(this)) "Autoplay next: ON" else "Autoplay next: OFF", Toast.LENGTH_SHORT).show()
