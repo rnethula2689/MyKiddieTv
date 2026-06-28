@@ -54,6 +54,10 @@ class SettingsActivity : AppCompatActivity() {
             Configs.setEpgXmltvUrl(this, "")
             b.epgMsg.text = "Cleared — using the portal's own guide."
         }
+
+        b.diagnosticsBtn.setOnClickListener {
+            startActivity(android.content.Intent(this, DiagnosticsActivity::class.java))
+        }
     }
 
     private val epgIo = java.util.concurrent.Executors.newSingleThreadExecutor()

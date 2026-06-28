@@ -45,6 +45,7 @@ class PlayerActivity : AppCompatActivity() {
     // We start hardware-first for efficiency, then on a playback error rebuild the player
     // forcing FFmpeg software decoders for both audio and video.
     private var forceSoftware = false
+    private var linkRetried = false // P3.1: re-resolve a fresh link once if software-decode also fails
     private var screenLock: ScreenLock? = null
 
     private val aspectModes = listOf("Fit", "Zoom", "Stretch")
@@ -214,6 +215,10 @@ class PlayerActivity : AppCompatActivity() {
                 if (!forceSoftware) {
                     forceSoftware = true
                     rebuildSoftware()
+                } else if (!linkRetried && resumeSource.isNotBlank()) {
+                    // Software decode also failed → the stream link may have expired; re-resolve once.
+                    linkRetried = true
+                    reResolveAndReplay()
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -231,6 +236,28 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /** Rebuild the player (now in software-decode mode) and resume the current stream. */
+    /** Re-resolve a fresh stream link (expired token / dead source) and replay from the same spot. */
+    private fun reResolveAndReplay() {
+        val pos = player?.currentPosition ?: 0L
+        Toast.makeText(this, "Reconnecting…", Toast.LENGTH_SHORT).show()
+        io.execute {
+            val u = Downloads.resolveSource(resumeSource)
+            runOnUiThread {
+                if (isFinishing || u.isNullOrEmpty()) return@runOnUiThread
+                videoUrl = u
+                forceSoftware = false // fresh link → give hardware decode another try
+                player?.release()
+                val np = buildPlayer()
+                player = np
+                b.playerView.player = np
+                np.setMediaItem(MediaItem.fromUri(u))
+                np.prepare()
+                if (!isLive && pos > 0) np.seekTo(pos)
+                np.playWhenReady = true
+            }
+        }
+    }
+
     private fun rebuildSoftware() {
         val old = player ?: return
         val pos = old.currentPosition
@@ -257,6 +284,7 @@ class PlayerActivity : AppCompatActivity() {
         titleText = ch.name
         b.title.text = ch.name
         forceSoftware = false // new channel: try hardware first again
+        linkRetried = false
         b.playerView.showController()
         io.execute {
             val u = Portal.createLink(ch.cmd)
@@ -281,13 +309,17 @@ class PlayerActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf("⏲   Sleep timer", "🎚   Playback settings", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("⏲   Sleep timer", "🎚   Playback settings", "⚠   Report not working", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Sleep") -> SleepTimer.showDialog(this)
                     action.contains("Playback") -> PlaybackSettings.show(this)
+                    action.contains("Report") -> {
+                        Reports.add(this, titleText, resumeSource.ifBlank { "vod" })
+                        Toast.makeText(this, "Reported — logged in Settings ▸ Diagnostics.", Toast.LENGTH_SHORT).show()
+                    }
                     action.contains("Autoplay") -> {
                         Configs.setAutoplay(this, !Configs.autoplay(this))
                         Toast.makeText(this, if (Configs.autoplay(this)) "Autoplay next: ON" else "Autoplay next: OFF", Toast.LENGTH_SHORT).show()
@@ -439,6 +471,7 @@ class PlayerActivity : AppCompatActivity() {
         resumeSource = item.source
         resumePoster = item.poster
         forceSoftware = false
+        linkRetried = false
         Toast.makeText(this, "▶  Next: ${item.title}", Toast.LENGTH_SHORT).show()
         io.execute {
             val url = Downloads.resolveSource(item.source)
