@@ -491,6 +491,7 @@ class ChannelsActivity : AppCompatActivity() {
         fun catGenres(): List<Portal.Genre> = cachedGenres
         fun catVodCats(): List<Portal.VodCat> = cachedVodCats
         fun cacheCatalog(g: List<Portal.Genre>, v: List<Portal.VodCat>) { cachedGenres = g; cachedVodCats = v }
+        fun allChannelsCatalog(): List<Portal.Channel> = cachedChannels
     }
 
     /** Read the active provider, connect in the background, then show the home menu. */
