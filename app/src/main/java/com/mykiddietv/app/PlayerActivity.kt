@@ -184,11 +184,13 @@ class PlayerActivity : AppCompatActivity() {
             .setReadTimeoutMs(20000)
         // Wrap so the factory can open both the http stream AND the local subtitle file://.
         val dataSource = androidx.media3.datasource.DefaultDataSource.Factory(this, http)
+        val (minBuf, maxBuf) = Configs.exoBufferMs(this)
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(20000, 60000, 1500, 3000)
+            .setBufferDurationsMs(minBuf, maxBuf, 1500, 3000)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
-        val mode = if (forceSoftware)
+        // Honour the user's hardware-decoding pref, plus the auto software-fallback flag.
+        val mode = if (forceSoftware || !Configs.hwDecode(this))
             androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
         else
             androidx.media3.exoplayer.DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
@@ -279,12 +281,13 @@ class PlayerActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf("⏲   Sleep timer", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("⏲   Sleep timer", "🎚   Playback settings", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Sleep") -> SleepTimer.showDialog(this)
+                    action.contains("Playback") -> PlaybackSettings.show(this)
                     action.contains("Autoplay") -> {
                         Configs.setAutoplay(this, !Configs.autoplay(this))
                         Toast.makeText(this, if (Configs.autoplay(this)) "Autoplay next: ON" else "Autoplay next: OFF", Toast.LENGTH_SHORT).show()

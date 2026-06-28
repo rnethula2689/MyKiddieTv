@@ -146,7 +146,7 @@ class LiveVlcActivity : AppCompatActivity() {
         b.title.text = titleText
 
         val options = arrayListOf(
-            "--network-caching=1500",
+            "--network-caching=${Configs.netCachingMs(this)}",
             "--http-reconnect",
             "--no-drop-late-frames",
             "--no-skip-frames"
@@ -369,8 +369,8 @@ class LiveVlcActivity : AppCompatActivity() {
         b.status.text = "Loading…"
         player.stop()
         val media = Media(vlc, Uri.parse(url))
-        media.setHWDecoderEnabled(true, false) // HW first, auto software fallback
-        media.addOption(":network-caching=1500")
+        media.setHWDecoderEnabled(Configs.hwDecode(this), false) // HW first (pref), auto software fallback
+        media.addOption(":network-caching=${Configs.netCachingMs(this)}")
         media.addOption(":http-user-agent=" + Portal.UA)
         media.addOption(":http-reconnect")
         player.media = media
@@ -685,12 +685,13 @@ class LiveVlcActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("ℹ️   About")
         else
-            arrayOf("⏲   Sleep timer", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf("⏲   Sleep timer", "🎚   Playback settings", "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Sleep") -> SleepTimer.showDialog(this)
+                    action.contains("Playback") -> PlaybackSettings.show(this)
                     action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)
