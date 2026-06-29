@@ -30,6 +30,11 @@
             android:text="👤   Profiles" />
 
         <TextView
+            android:id="@+id/rowPersonalization"
+            style="@style/SettingsRow"
+            android:text="✨   Personalization" />
+
+        <TextView
             android:id="@+id/rowKids"
             style="@style/SettingsRow"
             android:text="👶   Kids (screen time, history, content)" />

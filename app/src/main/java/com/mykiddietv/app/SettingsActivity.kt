@@ -24,6 +24,7 @@ class SettingsActivity : AppCompatActivity() {
 
         b.rowProviders.setOnClickListener { startActivity(Intent(this, ProvidersActivity::class.java)) }
         b.rowProfiles.setOnClickListener { showProfilesDialog() }
+        b.rowPersonalization.setOnClickListener { showPersonalizationDialog() }
         b.rowKids.setOnClickListener { showKidsDialog() }
         b.rowPin.setOnClickListener { showParentalPinDialog() }
         b.rowPlayback.setOnClickListener { PlaybackSettings.show(this) }
@@ -45,6 +46,22 @@ class SettingsActivity : AppCompatActivity() {
     private fun padded(v: View): FrameLayout {
         val pad = (20 * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(v) }
+    }
+
+    // ---- Personalization (Home rails) ----
+    private fun showPersonalizationDialog() {
+        val items = arrayOf("Hide “Recently Added” on Home", "Hide “For You” on Home")
+        val checked = booleanArrayOf(Configs.hideRecentlyAdded(this), Configs.hideForYou(this))
+        AlertDialog.Builder(this)
+            .setTitle("Personalization")
+            .setMultiChoiceItems(items, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton("Save") { _, _ ->
+                Configs.setHideRecentlyAdded(this, checked[0])
+                Configs.setHideForYou(this, checked[1])
+                toast("Home updated. Changes show next time you open Home.")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---- Kids ----
