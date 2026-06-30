@@ -28,6 +28,11 @@ object Profiles {
             .apply()
     }
 
+    // ---- kid picture (avatar) ----
+    /** "" = default (teddy bear) | "emoji:🦁" | "file:/path" (see Avatars). */
+    fun kidAvatar(ctx: Context): String = prefs(ctx).getString("kidAvatar", "") ?: ""
+    fun setKidAvatar(ctx: Context, a: String) { prefs(ctx).edit().putString("kidAvatar", a).apply() }
+
     // ---- passcode ----
     /** 4-digit parent passcode; empty string means "not set yet" (parent entry is open). */
     fun passcode(ctx: Context): String = prefs(ctx).getString("passcode", "") ?: ""

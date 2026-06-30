@@ -44,12 +44,8 @@ change what they're allowed to watch or exit kids mode.
   1. Settings > Profiles.
   2. Create a profile for your child and choose exactly which channels and
      which movie/series categories it may show.
-  3. Give the profile a PICTURE (optional): pick a fun icon (animals, toys,
-     etc.), or use "Camera" to take a photo or "Gallery" to choose one from
-     the device. "Aa" keeps the default colour + initial. The picture shows
-     on the profile picker so children recognise their profile.
-  4. The Kids home then displays only those picks.
-You can keep several profiles (e.g. one per child) and switch between them.
+  3. The Kids home then displays only those picks.
+(To change the Kids PICTURE on the "Who's watching?" screen, see section 7.)
 
 
 5. SCREEN TIME & BEDTIME
@@ -67,10 +63,22 @@ Settings > Kids > Watch history shows what your child has watched, with times.
 Use "Clear" to reset it.
 
 
-7. THE KIDS HOME
-----------------
-Children see big, simple tiles of the allowed channels and titles. Selecting
-one plays it full screen. There are no menus that let them wander outside the
+7. THE "WHO'S WATCHING?" SCREEN & THE KIDS PICTURE
+--------------------------------------------------
+When the app opens you see two tiles: Kids and Parent. Tap Kids for the kid
+home; tap Parent (passcode) for Settings and full browsing.
+
+To change your child's PICTURE (the Kids tile shows a teddy bear by default):
+  1. On the "Who's watching?" screen, PRESS AND HOLD (long-press) the Kids
+     tile. On a remote, hold the OK/centre button on the Kids tile.
+  2. Enter the parent passcode if asked.
+  3. Choose one: "Take a photo", "Choose from gallery", "Pick a fun icon"
+     (animals/toys/etc.), or "Default (teddy bear)".
+The new picture then shows on the Kids tile. (This changes only the picture,
+not the child's name — set the name in Settings > Kids.)
+
+In the kid home, children see big, simple tiles of the allowed channels and
+titles. Selecting one plays it full screen, with no way to wander outside the
 allowed list.
 
 
