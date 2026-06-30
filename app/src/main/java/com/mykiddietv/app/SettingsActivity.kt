@@ -25,6 +25,7 @@ class SettingsActivity : AppCompatActivity() {
         b.rowProviders.setOnClickListener { startActivity(Intent(this, ProvidersActivity::class.java)) }
         b.rowProfiles.setOnClickListener { showProfilesDialog() }
         b.rowPersonalization.setOnClickListener { showPersonalizationDialog() }
+        b.rowRemote.setOnClickListener { showRemoteDialog() }
         b.rowKids.setOnClickListener { showKidsDialog() }
         b.rowPin.setOnClickListener { showParentalPinDialog() }
         b.rowPlayback.setOnClickListener { PlaybackSettings.show(this) }
@@ -46,6 +47,46 @@ class SettingsActivity : AppCompatActivity() {
     private fun padded(v: View): FrameLayout {
         val pad = (20 * resources.displayMetrics.density).toInt()
         return FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(v) }
+    }
+
+    // ---- Remote control (key mapping) ----
+    private fun showRemoteDialog() {
+        val actions = RemoteMap.ACTIONS.entries.toList()
+        val labels = actions.map { "${it.value}\n     [ ${RemoteMap.keyName(RemoteMap.keyFor(this, it.key))} ]" }.toMutableList()
+        labels.add("↺  Reset all to default")
+        AlertDialog.Builder(this)
+            .setTitle("Remote control — map keys")
+            .setItems(labels.toTypedArray()) { _, w ->
+                if (w >= actions.size) {
+                    RemoteMap.clearAll(this); toast("All remote keys reset to default.")
+                } else captureKey(actions[w].key, actions[w].value)
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    /** A button-less dialog so it captures EVERY key (including D-pad/OK); Back cancels. */
+    private fun captureKey(action: String, label: String) {
+        val msg = TextView(this).apply {
+            text = "Press the remote key you want for:\n\n“$label”\n\n(Press Back to cancel.)"
+            textSize = 16f; setTextColor(0xFFE6EDF3.toInt())
+        }
+        val dlg = AlertDialog.Builder(this).setTitle("Map a key").setView(padded(msg)).create()
+        dlg.setOnKeyListener { d, keyCode, ev ->
+            if (ev.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener true
+            when (keyCode) {
+                android.view.KeyEvent.KEYCODE_BACK -> d.dismiss()
+                android.view.KeyEvent.KEYCODE_HOME -> { /* ignore — can't map Home */ }
+                else -> {
+                    RemoteMap.setKey(this, action, keyCode)
+                    toast("“$label”  →  ${RemoteMap.keyName(keyCode)}")
+                    d.dismiss()
+                    showRemoteDialog()
+                }
+            }
+            true
+        }
+        dlg.show()
     }
 
     // ---- Personalization (Home rails) ----
