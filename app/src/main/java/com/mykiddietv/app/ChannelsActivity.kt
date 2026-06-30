@@ -763,8 +763,8 @@ class ChannelsActivity : AppCompatActivity() {
         else
             vodFav("movie", Favorites.Entry("movie", v.id, v.name, v.posterUrl, "vod|${v.id}|${v.cmd}"))
         return Row(label, v.posterUrl, sortKey = v.name, fav = fav, poster = poster) {
-            if (v.isSeries) showSeasons(v)
-            else mediaActions(v.name, v.posterUrl, "movie_${v.id}", "vod|${v.id}|${v.cmd}", info = MovieInfo.from(v))
+            if (v.isSeries) openSeriesDetail(v)
+            else openMovieDetail(v)
         }
     }
 
@@ -785,6 +785,32 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Movie / episode action sheet: play, watch trailer, info & ratings, watch later, download.
      *  [source] lets a download resume later; [info] (movies only) drives the info sheet. */
+    /** Open the rich movie details screen (replaces the old action-sheet popup for movies). */
+    private fun openMovieDetail(v: Portal.VodItem) {
+        startActivity(Intent(this, MovieDetailActivity::class.java)
+            .putExtra("vodId", v.id).putExtra("title", v.name).putExtra("cmd", v.cmd)
+            .putExtra("poster", v.posterUrl).putExtra("year", v.year)
+            .putExtra("genre", v.genre).putExtra("imdb", v.imdb))
+    }
+
+    /** Open the rich details screen for a series (season selector + episodes + cast/trailers). */
+    private fun openSeriesDetail(v: Portal.VodItem) {
+        startActivity(Intent(this, MovieDetailActivity::class.java)
+            .putExtra("vodId", v.id).putExtra("title", v.name)
+            .putExtra("poster", v.posterUrl).putExtra("year", v.year)
+            .putExtra("genre", v.genre).putExtra("imdb", v.imdb)
+            .putExtra("isSeries", true))
+    }
+
+    /** Open the movie details screen from a stored source ("vod|<id>|<cmd>") — search & favourites. */
+    private fun openMovieDetailSrc(title: String, poster: String?, source: String) {
+        val parts = source.split("|")
+        startActivity(Intent(this, MovieDetailActivity::class.java)
+            .putExtra("vodId", parts.getOrNull(1) ?: "")
+            .putExtra("cmd", parts.drop(2).joinToString("|"))
+            .putExtra("title", title).putExtra("poster", poster ?: ""))
+    }
+
     private fun mediaActions(
         title: String, poster: String?, id: String, source: String,
         playlist: List<PlayerActivity.PlaylistItem> = emptyList(), plIndex: Int = -1,
@@ -1024,16 +1050,16 @@ class ChannelsActivity : AppCompatActivity() {
                 .filter { it.second > 0 }.sortedByDescending { it.second }.map { it.first }
             if (ranked.isNotEmpty()) rows.add(Row("For You", null, rail = ranked.take(15).map { v ->
                 Card(v.name, v.posterUrl.ifBlank { null }) {
-                    if (v.isSeries) showSeasons(v)
-                    else mediaActions(v.name, v.posterUrl, "movie_${v.id}", "vod|${v.id}|${v.cmd}", info = MovieInfo.from(v))
+                    if (v.isSeries) openSeriesDetail(v)
+                    else openMovieDetail(v)
                 }
             }) {})
         }
         // Newest movies from the portal (fetched in the background after connect; absent until ready).
         if (recent.isNotEmpty() && !Configs.hideRecentlyAdded(this)) rows.add(Row("Recently Added", null, rail = recent.map { v ->
             Card(v.name, v.posterUrl.ifBlank { null }) {
-                if (v.isSeries) showSeasons(v)
-                else mediaActions(v.name, v.posterUrl, "movie_${v.id}", "vod|${v.id}|${v.cmd}", info = MovieInfo.from(v))
+                if (v.isSeries) openSeriesDetail(v)
+                else openMovieDetail(v)
             }
         }) {})
 
@@ -1060,7 +1086,7 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Open a favourite card from the home rail (movie → play, series → seasons). */
     private fun openFavEntry(e: Favorites.Entry) {
-        if (e.kind == "series") showSeasons(Portal.VodItem(e.id, e.title, "", e.poster, true))
+        if (e.kind == "series") openSeriesDetail(Portal.VodItem(e.id, e.title, "", e.poster, true))
         else play(e.title, e.id, e.poster, e.source)
     }
 
@@ -1506,7 +1532,7 @@ class ChannelsActivity : AppCompatActivity() {
         val rows = ArrayList<Row>()
         for (m in all.filter { it.kind == "movie" })
             rows.add(Row("🎬  ${m.title}", m.poster.ifBlank { null }, sortKey = m.title, fav = vodFav("movie", m)) {
-                mediaActions(m.title, m.poster, "movie_${m.id}", m.source)
+                openMovieDetailSrc(m.title, m.poster, m.source)
             })
         for (s in all.filter { it.kind == "series" })
             rows.add(Row("📁  ${s.title}", s.poster.ifBlank { null }, sortKey = s.title, fav = vodFav("series", s)) { openFavSeries(s) })
@@ -1576,7 +1602,7 @@ class ChannelsActivity : AppCompatActivity() {
         for (m in all.filter { it.kind == "movie" }) {
             val fav = vodFav("movie", m)
             rows.add(Row("🎬  ${m.title}", m.poster.ifBlank { null }, sortKey = m.title, fav = fav) {
-                mediaActions(m.title, m.poster, "movie_${m.id}", m.source)
+                openMovieDetailSrc(m.title, m.poster, m.source)
             })
         }
         // Whole-series favourites (open all seasons; long-press to un-favourite)
@@ -1635,7 +1661,7 @@ class ChannelsActivity : AppCompatActivity() {
 
     private fun openFavSeries(e: Favorites.Entry) {
         val id = e.source.split("|").getOrElse(1) { e.id }
-        showSeasons(Portal.VodItem(id, e.title, "", e.poster, true))
+        openSeriesDetail(Portal.VodItem(id, e.title, "", e.poster, true))
     }
 
     private fun openFavSeason(e: Favorites.Entry) {
