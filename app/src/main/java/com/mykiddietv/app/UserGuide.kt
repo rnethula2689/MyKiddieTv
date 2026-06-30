@@ -44,7 +44,11 @@ change what they're allowed to watch or exit kids mode.
   1. Settings > Profiles.
   2. Create a profile for your child and choose exactly which channels and
      which movie/series categories it may show.
-  3. The Kids home then displays only those picks.
+  3. Give the profile a PICTURE (optional): pick a fun icon (animals, toys,
+     etc.), or use "Camera" to take a photo or "Gallery" to choose one from
+     the device. "Aa" keeps the default colour + initial. The picture shows
+     on the profile picker so children recognise their profile.
+  4. The Kids home then displays only those picks.
 You can keep several profiles (e.g. one per child) and switch between them.
 
 
