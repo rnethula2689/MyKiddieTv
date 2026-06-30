@@ -836,19 +836,17 @@ class LiveVlcActivity : AppCompatActivity() {
                     KeyEvent.KEYCODE_MENU -> { showMenu(); return true }
                     KeyEvent.KEYCODE_CHANNEL_UP -> { switchChannel(-1); return true }
                     KeyEvent.KEYCODE_CHANNEL_DOWN -> { switchChannel(1); return true }
-                    KeyEvent.KEYCODE_DPAD_UP -> {
-                        if (!barShown) { switchChannel(-1); return true }
-                        if (b.topBar.findFocus() == null) { b.topBar.requestFocus(); return true }
-                    }
-                    KeyEvent.KEYCODE_DPAD_DOWN -> {
-                        if (!barShown) { switchChannel(1); return true }
-                    }
+                    // Up/Down ALWAYS change channel (the options bar is horizontal — navigate it with
+                    // ◀ ▶ and open/activate with OK), so fast surfing works even while the bar is showing.
+                    KeyEvent.KEYCODE_DPAD_UP -> { switchChannel(-1); return true }
+                    KeyEvent.KEYCODE_DPAD_DOWN -> { switchChannel(1); return true }
                     KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
                         if (!barShown && currentArchiveSec() > 0) { enterTimeshift(); return true }
                     }
                     KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                         if (playFailed) { retryNow(); return true }
                         if (!barShown) { showBar(); b.topBar.requestFocus(); return true }
+                        if (b.topBar.findFocus() == null) { b.topBar.requestFocus(); return true }
                     }
                 }
             }
