@@ -103,8 +103,11 @@ Optional external guide: Settings > TV Guide (EPG).
 
 10. MOVIES & SERIES
 -------------------
-Allowed movies/series appear as posters. Select a movie for Play, Watch
-trailer, Info, Watch later, or Download. For a series, choose Season > Episode.
+Selecting a title opens its DETAILS screen — backdrop, poster, rating, genre,
+runtime, full overview, a Trailers rail and a Cast rail, with Play plus icon
+buttons for Favourite (★), Watch later (🕒) and Download (⬇). For a SERIES the
+screen has a Season selector and an episode list. It adapts to portrait or
+landscape automatically.
 
 
 11. FAVOURITES, WATCH LATER, CONTINUE WATCHING
