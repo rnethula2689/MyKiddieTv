@@ -1065,8 +1065,27 @@ class ChannelsActivity : AppCompatActivity() {
 
         // Live/Movies/Favourites/Recordings/Watch Later/Downloads live in the floating bottom tab bar.
         // Manage Kid Content stays a row (kid-specific, not in the tab bar).
-        rows.add(Row("👶   Manage Kid Content", null) { startActivity(Intent(this, KidContentActivity::class.java)) })
+        rows.add(Row("👶   Manage Kid Content", null) { openManageKidContent() })
         push(Page("MyKiddieTv", rows, kind = SearchKind.GLOBAL, rebuild = { showHome() }))
+    }
+
+    /** Manage a kid's approved content — pick which kid when there are several. */
+    private fun openManageKidContent() {
+        val kids = Profiles.kids(this)
+        when {
+            kids.isEmpty() -> androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("No kid profiles yet")
+                .setMessage("Add a kid on the “Who's watching?” screen first, then you can choose their approved content.")
+                .setPositiveButton("OK", null).show()
+            kids.size == 1 -> { Profiles.setActiveKid(this, kids[0].id); startActivity(Intent(this, KidContentActivity::class.java)) }
+            else -> {
+                val names = kids.map { "${it.name}  (${AgeBands.of(it.ageBand).name})" }.toTypedArray()
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Manage which kid's content?")
+                    .setItems(names) { _, w -> Profiles.setActiveKid(this, kids[w].id); startActivity(Intent(this, KidContentActivity::class.java)) }
+                    .setNegativeButton("Cancel", null).show()
+            }
+        }
     }
 
     /** Long-press a Continue Watching card → remove just it, or clear the whole row. */
