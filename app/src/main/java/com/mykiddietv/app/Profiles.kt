@@ -29,7 +29,9 @@ object Profiles {
         var name: String,
         var avatar: String = "",              // "" | "emoji:🦁" | "file:/path" (see Avatars)
         var ageBand: Int = AgeBands.YOUNGER,  // 0..3 (see AgeBands)
-        var filterMode: String = "pick",      // "pick" (whitelist) | "auto" (by age rating) — Phase 3
+        var filterMode: String = "pick",      // "pick" (parent hand-picks) | "auto" (kid browses everything ≤ age cap)
+        var filterPickList: Boolean = false,  // pick mode only: filter the PARENT's browse list to the age cap
+        var hideUnrated: Boolean = true,      // hide titles with no age certification found (TMDB/OMDb)
         val channels: MutableList<Portal.Channel> = ArrayList(),
         val vod: MutableList<Portal.VodItem> = ArrayList(),
         val episodes: MutableList<KidEpisode> = ArrayList(),
@@ -66,6 +68,7 @@ object Profiles {
         return JSONObject()
             .put("id", k.id).put("name", k.name).put("avatar", k.avatar)
             .put("ageBand", k.ageBand).put("filterMode", k.filterMode)
+            .put("filterPickList", k.filterPickList).put("hideUnrated", k.hideUnrated)
             .put("channels", ch).put("vod", vd).put("episodes", ep).put("downloads", dl)
     }
 
@@ -75,7 +78,9 @@ object Profiles {
             name = o.optString("name"),
             avatar = o.optString("avatar", ""),
             ageBand = o.optInt("ageBand", AgeBands.YOUNGER),
-            filterMode = o.optString("filterMode", "pick")
+            filterMode = o.optString("filterMode", "pick"),
+            filterPickList = o.optBoolean("filterPickList", false),
+            hideUnrated = o.optBoolean("hideUnrated", true)
         )
         o.optJSONArray("channels")?.let { a ->
             for (i in 0 until a.length()) { val c = a.optJSONObject(i) ?: continue

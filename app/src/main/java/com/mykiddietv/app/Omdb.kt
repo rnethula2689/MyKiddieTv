@@ -40,6 +40,21 @@ object Omdb {
         } catch (_: Exception) { null }
     }
 
+    /** OMDb's "Rated" content certification (e.g. "PG-13", "TV-MA") — fallback age-cap source when TMDB has none. */
+    fun rated(apiKey: String, title: String, year: String): String? {
+        if (apiKey.isBlank() || title.isBlank()) return null
+        return try {
+            val q = URLEncoder.encode(Tmdb.cleanTitle(title), "UTF-8")
+            var js = JSONObject(httpGet("https://www.omdbapi.com/?apikey=$apiKey&t=$q&y=$year".let {
+                if (year.isBlank()) "https://www.omdbapi.com/?apikey=$apiKey&t=$q" else it
+            }))
+            if (js.optString("Response") != "True" && year.isNotBlank())
+                js = JSONObject(httpGet("https://www.omdbapi.com/?apikey=$apiKey&t=$q"))
+            if (js.optString("Response") != "True") return null
+            js.optString("Rated").takeIf { it.isNotBlank() && it != "N/A" }
+        } catch (_: Exception) { null }
+    }
+
     private fun httpGet(url: String): String {
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000; readTimeout = 8000; requestMethod = "GET"

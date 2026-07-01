@@ -23,6 +23,13 @@ class KidMoviesActivity : AppCompatActivity() {
     private var inSeries: String? = null   // non-null = viewing a series' episodes
     private var band = AgeBands.YOUNGER
     private var streamingRows: List<ChannelsActivity.Row> = emptyList()
+    // Auto mode (kid browses everything within their age cap): current category / series being viewed.
+    private var autoCat: Portal.VodCat? = null
+    private var autoSeries: Portal.VodItem? = null
+    private var autoInEpisodes = false
+
+    private fun autoMode(): Boolean = Profiles.activeKid(this)?.filterMode == "auto"
+    private fun kidHideUnrated(): Boolean = Profiles.activeKid(this)?.hideUnrated ?: true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +72,7 @@ class KidMoviesActivity : AppCompatActivity() {
 
     private fun showHome() {
         inStreaming = false; inSeries = null
+        autoCat = null; autoSeries = null
         b.title.text = "Movies & Shows"
         b.search.visibility = View.GONE
         b.status.visibility = View.GONE
@@ -81,6 +89,7 @@ class KidMoviesActivity : AppCompatActivity() {
     /** Approved content streamed online (needs internet). */
     private fun showStreaming() {
         inStreaming = true; inSeries = null
+        if (autoMode()) { showAutoCategories(); return }
         b.title.text = "Live Movies & Shows"
         val movies = Profiles.allowedVod(this).filter { !it.isSeries }
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
@@ -118,6 +127,95 @@ class KidMoviesActivity : AppCompatActivity() {
         startActivity(Intent(this, KidDetailActivity::class.java)
             .putExtra("vodId", v.id).putExtra("cmd", v.cmd)
             .putExtra("title", v.name).putExtra("poster", v.posterUrl))
+    }
+
+    // ---- Auto mode: browse the whole catalog, filtered to the kid's age cap ----
+    private fun showAutoCategories() {
+        autoCat = null; autoSeries = null; autoInEpisodes = false
+        b.title.text = "Movies & Shows"
+        b.search.visibility = View.GONE
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
+        io.execute {
+            val cats = Portal.vodCategories()
+            runOnUiThread {
+                b.status.visibility = if (cats.isEmpty()) View.VISIBLE else View.GONE
+                if (cats.isEmpty()) b.status.text = "Nothing to show right now."
+                adapter.submit(cats.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title) { showAutoCategory(c) } })
+                b.list.scrollToPosition(0)
+            }
+        }
+    }
+
+    private fun showAutoCategory(cat: Portal.VodCat) {
+        autoCat = cat; autoSeries = null; autoInEpisodes = false
+        b.title.text = cat.title
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading ${cat.title}…"
+        io.execute {
+            val (items, pages) = Portal.vodList(cat.id, 1)
+            val rows = autoRows(cat, ArrayList(items), 1, pages)
+            runOnUiThread {
+                b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+                if (rows.isEmpty()) b.status.text = "Nothing age-appropriate here yet."
+                adapter.submit(rows); b.list.scrollToPosition(0)
+            }
+        }
+    }
+
+    /** Build rows for a category page, keeping only titles within the kid's cap. Runs on io (cert lookups, cached). */
+    private fun autoRows(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<ChannelsActivity.Row> {
+        val hide = kidHideUnrated()
+        val rows = ArrayList<ChannelsActivity.Row>()
+        for (v in acc) {
+            if (!KidRating.show(this, v.name, "", band, hide)) continue
+            if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) })
+            else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
+        }
+        if (loaded < total) rows.add(ChannelsActivity.Row("⬇  Load more", null, "zzzzz") {
+            b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
+            io.execute {
+                val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                acc.addAll(more)
+                val rows2 = autoRows(cat, acc, loaded + 1, total)
+                runOnUiThread { b.status.visibility = View.GONE; adapter.submit(rows2) }
+            }
+        })
+        return rows
+    }
+
+    private fun showAutoSeasons(series: Portal.VodItem) {
+        autoSeries = series; autoInEpisodes = false
+        b.title.text = series.name
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading ${series.name}…"
+        io.execute {
+            val seasons = Portal.seriesSeasons(series.id)
+            runOnUiThread {
+                b.status.visibility = if (seasons.isEmpty()) View.VISIBLE else View.GONE
+                if (seasons.isEmpty()) { b.status.text = "No episodes yet."; return@runOnUiThread }
+                adapter.submit(seasons.reversed().map { s ->
+                    ChannelsActivity.Row("📁  ${s.name}", null, s.name) { showAutoEpisodes(series, s) }
+                })
+                b.list.scrollToPosition(0)
+            }
+        }
+    }
+
+    private fun showAutoEpisodes(series: Portal.VodItem, season: Portal.Season) {
+        autoInEpisodes = true
+        b.title.text = "${series.name} — ${season.name}"
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading ${season.name}…"
+        io.execute {
+            val eps = Portal.seriesEpisodes(series.id, season.id)
+            runOnUiThread {
+                b.status.visibility = if (eps.isEmpty()) View.VISIBLE else View.GONE
+                if (eps.isEmpty()) { b.status.text = "No episodes."; return@runOnUiThread }
+                adapter.submit(eps.reversed().map { e ->
+                    ChannelsActivity.Row("🎬  ${e.name}", series.posterUrl, e.name) {
+                        play("${series.name} — ${e.name}") { Portal.playEpisodeUrl(series.id, season.id, e.id) }
+                    }
+                })
+                b.list.scrollToPosition(0)
+            }
+        }
     }
 
     private fun showEpisodes(seriesId: String) {
@@ -163,6 +261,9 @@ class KidMoviesActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         when {
+            autoInEpisodes -> { val s = autoSeries; if (s != null) showAutoSeasons(s) else showAutoCategories() }
+            autoSeries != null -> { val c = autoCat; if (c != null) showAutoCategory(c) else showAutoCategories() }
+            autoCat != null -> showAutoCategories()
             inSeries != null -> showStreaming()
             inStreaming -> showHome()
             else -> super.onBackPressed()

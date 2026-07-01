@@ -319,8 +319,48 @@ class KidContentActivity : AppCompatActivity() {
         push(Page("Manage Kid Content", listOf(
             KidNode("📺   Live TV", null, "Live TV", open = { showLive() }),
             KidNode("🎬   Movies & Shows", null, "Movies", open = { showMovies() }),
-            KidNode("✅   Approved Content  (review / remove)", null, "Approved", open = { showApproved() })
+            KidNode("✅   Approved Content  (review / remove)", null, "Approved", open = { showApproved() }),
+            KidNode("⚙   Content settings for ${Profiles.kidName(this)}", null, "Settings", open = { contentSettingsDialog() })
         ), Kind.GLOBAL))
+    }
+
+    // ---- per-kid content settings (hand-pick vs auto, list filter, hide unrated) ----
+    private fun contentSettingsDialog() {
+        val k = Profiles.activeKid(this) ?: run { b.status.text = "No kid selected."; return }
+        val band = AgeBands.of(k.ageBand)
+        val dp = resources.displayMetrics.density; val pad = (20 * dp).toInt()
+        fun tv(t: String, size: Float, color: Int) = android.widget.TextView(this).apply { text = t; textSize = size; setTextColor(color) }
+        val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
+        col.addView(tv("${k.name}  ·  ${band.emoji} ${band.name}  (cap ${band.rating})", 13f, 0xFF8B97A5.toInt()))
+        col.addView(tv("\nHow should ${k.name} get movies & shows?", 15f, 0xFFE6EDF3.toInt()))
+        val rg = android.widget.RadioGroup(this)
+        val rbPick = android.widget.RadioButton(this).apply { text = "I'll hand-pick titles"; id = 1; setTextColor(0xFFE6EDF3.toInt()) }
+        val rbAuto = android.widget.RadioButton(this).apply { text = "Show everything within their age cap (no picking)"; id = 2; setTextColor(0xFFE6EDF3.toInt()) }
+        rg.addView(rbPick); rg.addView(rbAuto); rg.check(if (k.filterMode == "auto") 2 else 1); col.addView(rg)
+        val cbFilter = android.widget.CheckBox(this).apply { text = "While I pick, hide titles above the cap"; isChecked = k.filterPickList; setTextColor(0xFFE6EDF3.toInt()) }
+        val cbHide = android.widget.CheckBox(this).apply { text = "Hide titles with no age rating"; isChecked = k.hideUnrated; setTextColor(0xFFE6EDF3.toInt()) }
+        col.addView(cbFilter); col.addView(cbHide)
+        fun sync() { cbFilter.isEnabled = rg.checkedRadioButtonId != 2 }
+        rg.setOnCheckedChangeListener { _, _ -> sync() }; sync()
+        AlertDialog.Builder(this)
+            .setTitle("Content settings")
+            .setView(col)
+            .setPositiveButton("Save") { _, _ ->
+                k.filterMode = if (rg.checkedRadioButtonId == 2) "auto" else "pick"
+                k.filterPickList = cbFilter.isChecked
+                k.hideUnrated = cbHide.isChecked
+                Profiles.saveKid(this, k)
+                b.status.text = "Saved settings for ${k.name} ✓"
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** In hand-pick mode with "filter my list" on, drop titles above the kid's age cap. Runs on io (network, cached). */
+    private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> {
+        val k = Profiles.activeKid(this) ?: return items
+        if (k.filterMode != "pick" || !k.filterPickList) return items
+        return items.filter { KidRating.show(this, it.name, "", k.ageBand, k.hideUnrated) }
     }
 
     // ---- Approved Content (review & remove already-whitelisted items) ----
@@ -422,9 +462,10 @@ class KidContentActivity : AppCompatActivity() {
         b.status.text = "Loading ${cat.title}…"
         io.execute {
             val (items, pages) = Portal.vodList(cat.id, 1)
+            val filtered = filterForPick(items)
             runOnUiThread {
                 b.status.text = ""
-                push(Page(cat.title, vodNodes(cat, ArrayList(items), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
+                push(Page(cat.title, vodNodes(cat, ArrayList(filtered), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
             }
         }
     }
@@ -437,9 +478,10 @@ class KidContentActivity : AppCompatActivity() {
                 b.status.text = "Loading…"
                 io.execute {
                     val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                    val moreFiltered = filterForPick(more)
                     runOnUiThread {
                         b.status.text = ""
-                        acc.addAll(more)
+                        acc.addAll(moreFiltered)
                         display(Page(cat.title, vodNodes(cat, acc, loaded + 1, total), Kind.VOD_CATEGORY, scopeCat = cat.id))
                     }
                 }
@@ -539,7 +581,7 @@ class KidContentActivity : AppCompatActivity() {
         val seq = searchSeq
         val task = Runnable {
             io.execute {
-                val vod = Portal.vodSearch(query)
+                val vod = filterForPick(Portal.vodSearch(query))
                 runOnUiThread {
                     if (seq != searchSeq) return@runOnUiThread
                     b.status.text = ""
@@ -558,7 +600,7 @@ class KidContentActivity : AppCompatActivity() {
         val seq = searchSeq
         val task = Runnable {
             io.execute {
-                val vod = if (catId == null) Portal.vodSearch(query) else Portal.vodSearchInCategory(catId, query)
+                val vod = filterForPick(if (catId == null) Portal.vodSearch(query) else Portal.vodSearchInCategory(catId, query))
                 runOnUiThread {
                     if (seq != searchSeq) return@runOnUiThread
                     val nodes = vod.map { vodNode(it) }
@@ -594,7 +636,7 @@ class KidContentActivity : AppCompatActivity() {
             val cat = page.scopeCat
             b.status.text = "Loading “$letter”…"
             io.execute {
-                val items = Portal.vodByLetter(cat, letter)
+                val items = filterForPick(Portal.vodByLetter(cat, letter))
                 runOnUiThread {
                     b.status.text = if (items.isEmpty()) "No titles starting with “$letter”." else ""
                     submit(items.map { vodNode(it) })

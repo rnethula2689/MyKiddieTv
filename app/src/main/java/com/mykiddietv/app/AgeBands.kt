@@ -48,4 +48,34 @@ object AgeBands {
         OLDER -> "PG"
         else -> "PG-13"
     }
+
+    // ---- content-certification cap (for the pick-list filter + auto mode) ----
+    // A single 0..3 "maturity level" that maps both movie (G/PG/PG-13/R) and TV (TV-Y…TV-MA) ratings.
+    /** Highest maturity level this band may see. */
+    fun maxLevel(band: Int): Int = when (band) {
+        PRESCHOOL -> 0   // G / TV-Y / TV-G
+        YOUNGER -> 1     // + PG / TV-PG
+        OLDER -> 1
+        else -> 2        // Teen: + PG-13 / TV-14
+    }
+
+    /** Map a certification string to a maturity level, or -1 if unknown / unrated. */
+    fun certLevel(cert: String?): Int {
+        val c = cert?.trim()?.uppercase() ?: return -1
+        return when {
+            c.isBlank() || c in setOf("N/A", "NR", "NOT RATED", "UNRATED", "UR", "TBD") -> -1
+            c in setOf("G", "TV-Y", "TV-Y7", "TV-Y7-FV", "TV-G", "U", "APPROVED", "E", "EC") -> 0
+            c in setOf("PG", "TV-PG") -> 1
+            c in setOf("PG-13", "TV-14", "12", "12A", "15") -> 2
+            c in setOf("R", "TV-MA", "NC-17", "X", "MA-17", "18", "AO") -> 3
+            else -> -1
+        }
+    }
+
+    /** Should a title with this certification be shown to [band]? Unknown certs defer to [hideUnrated]. */
+    fun allows(cert: String?, band: Int, hideUnrated: Boolean): Boolean {
+        val lvl = certLevel(cert)
+        if (lvl == -1) return !hideUnrated
+        return lvl <= maxLevel(band)
+    }
 }

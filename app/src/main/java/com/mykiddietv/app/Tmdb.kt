@@ -78,6 +78,47 @@ object Tmdb {
         if (id == null) null else parseDetails(JSONObject(httpGet("https://api.themoviedb.org/3/tv/$id?api_key=$apiKey&append_to_response=videos,aggregate_credits")), title, true)
     } catch (_: Exception) { null }
 
+    /** US content certification (e.g. "PG-13", "TV-14") for the age filter — tries movie, then TV. */
+    fun certification(apiKey: String, title: String, year: String): String? {
+        if (apiKey.isBlank() || title.isBlank()) return null
+        return movieCert(apiKey, title, year) ?: tvCert(apiKey, title, year)
+    }
+
+    private fun movieCert(apiKey: String, title: String, year: String): String? = try {
+        val id = searchId(apiKey, "movie", title, year)
+            ?: (if (year.isNotBlank()) searchId(apiKey, "movie", title, "") else null)
+        if (id == null) null else {
+            val js = JSONObject(httpGet("https://api.themoviedb.org/3/movie/$id/release_dates?api_key=$apiKey"))
+            val results = js.optJSONArray("results")
+            var out: String? = null
+            if (results != null) for (i in 0 until results.length()) {
+                val r = results.optJSONObject(i) ?: continue
+                if (r.optString("iso_3166_1") != "US") continue
+                val rds = r.optJSONArray("release_dates") ?: continue
+                for (j in 0 until rds.length()) {
+                    val c = rds.optJSONObject(j)?.optString("certification")?.takeIf { it.isNotBlank() }
+                    if (c != null) { out = c; break }
+                }
+            }
+            out
+        }
+    } catch (_: Exception) { null }
+
+    private fun tvCert(apiKey: String, title: String, year: String): String? = try {
+        val id = searchId(apiKey, "tv", title, year)
+            ?: (if (year.isNotBlank()) searchId(apiKey, "tv", title, "") else null)
+        if (id == null) null else {
+            val js = JSONObject(httpGet("https://api.themoviedb.org/3/tv/$id/content_ratings?api_key=$apiKey"))
+            val results = js.optJSONArray("results")
+            var out: String? = null
+            if (results != null) for (i in 0 until results.length()) {
+                val r = results.optJSONObject(i) ?: continue
+                if (r.optString("iso_3166_1") == "US") { out = r.optString("rating").takeIf { it.isNotBlank() }; break }
+            }
+            out
+        }
+    } catch (_: Exception) { null }
+
     private fun parseDetails(js: JSONObject, fallbackTitle: String, tv: Boolean): Details {
         fun img(path: String, size: String) = path.takeIf { it.isNotBlank() && it != "null" }?.let { "https://image.tmdb.org/t/p/$size$it" }
         val genres = js.optJSONArray("genres")?.let { a ->
