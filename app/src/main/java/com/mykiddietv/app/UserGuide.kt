@@ -228,6 +228,10 @@ in the live player.
   - A movie's audio is too QUIET (some titles are mastered at a low level): open
     the player menu and pick "Audio boost" to cycle Off > +4 > +8 > +12 dB. It
     lifts the volume above the normal 100% and is remembered for next time.
+  - A movie won't play smoothly in the default player: from the parent-side
+    player menu pick "Switch player (VLC)" to play it through the VLC engine
+    (it handles some codecs/containers better). Position, Continue Watching and
+    autoplay-next carry over; "Switch player (Default)" switches back.
   - No guide: set an external XMLTV source in Settings > TV Guide (EPG).
   - App closed unexpectedly: Settings > Troubleshooting shows the last crash
     details; "Clear" dismisses it.

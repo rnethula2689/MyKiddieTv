@@ -28,6 +28,10 @@ class LiveVlcActivity : AppCompatActivity() {
         var liveChannels: List<Portal.Channel> = emptyList()
         // Set by the launching screen; hides parent-only menu items for kids.
         var kidMode: Boolean = false
+        // Episode playlist handed over from PlayerActivity when switching engines mid-title, so VLC
+        // can autoplay-next just like ExoPlayer. Consumed once in onCreate.
+        var vodPlaylist: List<PlayerActivity.PlaylistItem> = emptyList()
+        var vodPlaylistIndex = -1
     }
 
     private val io = Executors.newSingleThreadExecutor()
@@ -42,6 +46,19 @@ class LiveVlcActivity : AppCompatActivity() {
     private var screenLock: ScreenLock? = null
 
     private var isArchive = false
+    // --- VOD mode: movie/episode played through VLC (a sub-type of the scrubbable archive UI) with
+    // full resume-save, Continue Watching and autoplay-next, so VLC is a true equal to ExoPlayer. ---
+    private var isVod = false
+    private var resumeId = ""
+    private var resumeSource = ""
+    private var resumePoster = ""
+    private var vodEpList: List<PlayerActivity.PlaylistItem> = emptyList()
+    private var vodEpIndex = -1
+    private var vodAdvancing = false
+    private var vodLastPos = 0L      // position captured in onStop so onResume can seek back to it
+    private val resumeSaver = object : Runnable {
+        override fun run() { saveVodResume(); ui.postDelayed(this, 10_000) }
+    }
     private var seeking = false      // user is dragging the slider
     private var durationMs = 0L
     private var knownDurationMs = 0L // authoritative timeline length (program / timeshift window); 0 = fall back to VLC length
@@ -148,6 +165,15 @@ class LiveVlcActivity : AppCompatActivity() {
         titleText = intent.getStringExtra("title") ?: ""
         chIndex = intent.getIntExtra("chIndex", -1)
         isArchive = intent.getBooleanExtra("archive", false)
+        isVod = intent.getBooleanExtra("vod", false)
+        if (isVod) {
+            isArchive = true   // reuse the scrubbable finite-timeline UI (slider + skip controls)
+            resumeId = intent.getStringExtra("resumeId") ?: ""
+            resumeSource = intent.getStringExtra("resumeSource") ?: ""
+            resumePoster = intent.getStringExtra("resumePoster") ?: ""
+            vodEpList = vodPlaylist; vodEpIndex = vodPlaylistIndex
+            vodPlaylist = emptyList(); vodPlaylistIndex = -1
+        }
         channels = liveChannels
         b.title.text = titleText
 
@@ -171,7 +197,11 @@ class LiveVlcActivity : AppCompatActivity() {
                     if (isArchive || timeshifting) b.playBtn.text = "⏸"
                 }
                 MediaPlayer.Event.Paused -> { if (isArchive || timeshifting) b.playBtn.text = "▶" }
-                MediaPlayer.Event.EndReached -> { if (isArchive) b.playBtn.text = "▶" else if (timeshifting) ui.post { returnToLive() } }
+                MediaPlayer.Event.EndReached -> {
+                    if (isVod) ui.post { onVodEnded() }
+                    else if (isArchive) b.playBtn.text = "▶"
+                    else if (timeshifting) ui.post { returnToLive() }
+                }
                 MediaPlayer.Event.EncounteredError ->
                     if (!isArchive && !timeshifting) autoRetry()
                     else b.status.apply { visibility = View.VISIBLE; text = "Couldn't play this." }
@@ -194,6 +224,12 @@ class LiveVlcActivity : AppCompatActivity() {
             knownDurationMs = intent.getLongExtra("durationSec", 0) * 1000 // program length → stable scrub timeline
             b.controlBar.visibility = View.VISIBLE   // catch-up: bar stays visible
             wireTransportControls()
+            if (isVod) {
+                b.recBtn.visibility = View.GONE   // recording a movie/episode makes no sense
+                val rs = intent.getLongExtra("resumeStart", 0L)
+                if (rs > 0) startSeekTo = rs   // poller applies it once the stream length is known
+                if (resumeId.isNotBlank()) ui.postDelayed(resumeSaver, 10_000)
+            }
         } else {
             saveLastChannel()
             // Live channels with an archive get timeshift (DVR rewind).
@@ -385,6 +421,131 @@ class LiveVlcActivity : AppCompatActivity() {
         player.media = media
         media.release()
         player.play()
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // VOD-in-VLC: resume, Continue Watching and autoplay-next (parity with the ExoPlayer VOD screen)
+    // ---------------------------------------------------------------------------------------------
+
+    /** Persist the current position to Continue Watching (same store/keys as the ExoPlayer screen). */
+    private fun saveVodResume() {
+        if (!isVod || resumeId.isBlank()) return
+        val p = mp ?: return
+        val pos = p.time
+        val dur = if (knownDurationMs > 0) knownDurationMs else p.length
+        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0)
+    }
+
+    /** End of a VOD item: autoplay the next episode, or (movie / autoplay off) offer to drop it. */
+    private fun onVodEnded() {
+        if (vodEpList.isNotEmpty() && Configs.autoplay(this)) advanceVodEpisode() else promptRemoveFromContinue()
+    }
+
+    /** A finished movie/episode with nothing to autoplay: ask whether to drop it from Continue Watching. */
+    private fun promptRemoveFromContinue() {
+        val id = resumeId
+        if (id.isBlank()) { finish(); return }
+        mp?.pause()
+        AlertDialog.Builder(this)
+            .setTitle("Finished watching")
+            .setMessage("Remove “$titleText” from Continue Watching?")
+            .setCancelable(false)
+            .setPositiveButton("Yes, remove") { _, _ ->
+                resumeId = ""  // stop onStop/onDestroy re-adding it
+                Resume.remove(applicationContext, id); finish()
+            }
+            .setNegativeButton("Keep") { _, _ ->
+                resumeId = ""
+                val dur = if (knownDurationMs > 0) knownDurationMs else (mp?.length ?: 0L)
+                Resume.save(applicationContext, id, "vod", titleText, resumePoster, resumeSource, 0L, dur)
+                finish()
+            }
+            .show()
+    }
+
+    /** Advance to the next episode in the season (rolling into the next season at the end). */
+    private fun advanceVodEpisode() {
+        if (vodAdvancing || vodEpList.isEmpty() || vodEpIndex < 0) return
+        if (vodEpIndex + 1 >= vodEpList.size) { loadNextVodSeason(); return }
+        vodAdvancing = true
+        saveVodResume()
+        playVodEpisode(vodEpList[vodEpIndex + 1], vodEpIndex + 1)
+    }
+
+    /** Resolve the item's fresh URL on IO and start it, updating title + resume identity. */
+    private fun playVodEpisode(item: PlayerActivity.PlaylistItem, newIndex: Int) {
+        vodEpIndex = newIndex
+        titleText = item.title; b.title.text = item.title
+        resumeId = item.resumeId; resumeSource = item.source; resumePoster = item.poster
+        knownDurationMs = 0            // new episode: unknown length → fall back to VLC's own timeline
+        seekTarget = -1L; startSeekTo = 0
+        android.widget.Toast.makeText(this, "▶  Next: ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
+        io.execute {
+            val url = Downloads.resolveSource(item.source)
+            runOnUiThread {
+                vodAdvancing = false
+                if (isFinishing) return@runOnUiThread
+                if (url.isNullOrEmpty()) {
+                    android.widget.Toast.makeText(this, "Couldn't load the next episode.", android.widget.Toast.LENGTH_SHORT).show()
+                    return@runOnUiThread
+                }
+                play(url)
+            }
+        }
+    }
+
+    /** End of season → first episode of the next season, if any (mirrors the ExoPlayer screen). */
+    private fun loadNextVodSeason() {
+        if (vodEpList.isEmpty() || vodEpIndex < 0) return
+        val cur = vodEpList[vodEpIndex]
+        val parts = cur.source.split("|")            // ep | seriesId | seasonId | episodeId
+        if (parts.size < 4 || parts[0] != "ep") return
+        val seriesId = parts[1]; val curSeasonId = parts[2]
+        val seriesName = cur.title.split("/").getOrElse(0) { "" }.trim()
+        val poster = cur.poster
+        vodAdvancing = true
+        io.execute {
+            val seasons = Portal.seriesSeasons(seriesId).reversed()
+            val curIdx = seasons.indexOfFirst { it.id == curSeasonId }
+            val nextSeason = if (curIdx >= 0) seasons.getOrNull(curIdx + 1) else null
+            val ordered = if (nextSeason != null) Portal.seriesEpisodes(seriesId, nextSeason.id).reversed() else emptyList()
+            runOnUiThread {
+                if (isFinishing) { vodAdvancing = false; return@runOnUiThread }
+                if (nextSeason == null || ordered.isEmpty()) {
+                    vodAdvancing = false
+                    android.widget.Toast.makeText(this, "That was the last episode — no more episodes or seasons after this.", android.widget.Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                vodEpList = ordered.map { ep ->
+                    PlayerActivity.PlaylistItem(
+                        "$seriesName  /  ${nextSeason.name}  /  ${ep.name}",
+                        "ep_${seriesId}_${nextSeason.id}_${ep.id}", poster,
+                        "ep|$seriesId|${nextSeason.id}|${ep.id}"
+                    )
+                }
+                android.widget.Toast.makeText(this, "▶  Next season: ${nextSeason.name}", android.widget.Toast.LENGTH_SHORT).show()
+                playVodEpisode(vodEpList[0], 0)
+            }
+        }
+    }
+
+    /** Hand this title back to the ExoPlayer engine, carrying position + resume identity + playlist. */
+    private fun switchToExo() {
+        val p = mp ?: return
+        val pos = p.time
+        saveVodResume()
+        PlayerActivity.kidMode = false   // engine switch is a parent-side action
+        PlayerActivity.playlist = vodEpList
+        PlayerActivity.playlistIndex = vodEpIndex
+        val i = Intent(this, PlayerActivity::class.java)
+            .putExtra("url", currentUrl)
+            .putExtra("title", titleText)
+            .putExtra("resumeId", resumeId)
+            .putExtra("resumeSource", resumeSource)
+            .putExtra("resumePoster", resumePoster)
+            .putExtra("resumeStart", pos)
+        startActivity(i)
+        finish()
     }
 
     /** Live only: Up = previous channel, Down = next. */
@@ -761,6 +922,7 @@ class LiveVlcActivity : AppCompatActivity() {
     private var menuDialog: AlertDialog? = null
     private fun showMenu() {
         if (menuDialog?.isShowing == true) { menuDialog?.dismiss(); return }
+        if (isVod && !kidMode) { showVodMenu(); return }
         val items = if (kidMode)
             arrayOf("ℹ️   About")
         else
@@ -777,6 +939,33 @@ class LiveVlcActivity : AppCompatActivity() {
                     action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
                     action.contains("About") -> About.show(this)
                     action.contains("Exit") -> finishAffinity()
+                }
+            }
+            .setOnDismissListener { menuDialog = null }
+            .create()
+        menuDialog = dlg
+        dlg.show()
+    }
+
+    /** Movie/episode-in-VLC menu (parent side): engine switch-back + the VOD-relevant options. */
+    private fun showVodMenu() {
+        val autoLabel = if (Configs.autoplay(this)) "🔁   Autoplay next: ON" else "🔁   Autoplay next: OFF"
+        val items = arrayOf("🔀   Switch player (Default)", "🎚   Playback settings", autoLabel, SleepTimer.menuLabel(), "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+        val dlg = AlertDialog.Builder(this)
+            .setItems(items) { _, which ->
+                val action = items[which]
+                when {
+                    action.contains("Switch player") -> switchToExo()
+                    action.contains("Playback") -> PlaybackSettings.show(this)
+                    action.contains("Autoplay") -> {
+                        Configs.setAutoplay(this, !Configs.autoplay(this))
+                        android.widget.Toast.makeText(this, if (Configs.autoplay(this)) "Autoplay next: ON" else "Autoplay next: OFF", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    action.contains("Sleep") -> SleepTimer.showDialog(this)
+                    action.contains("App updates") -> startActivity(Intent(this, AppUpdatesActivity::class.java))
+                    action.contains("About") -> About.show(this)
+                    action.contains("Exit") -> finishAffinity()
+                    action.contains("Settings") -> startActivity(Intent(this, SettingsActivity::class.java))
                 }
             }
             .setOnDismissListener { menuDialog = null }
@@ -870,7 +1059,10 @@ class LiveVlcActivity : AppCompatActivity() {
         }
         // onStop() stops playback to free the stream; re-start it when we return (e.g. from Settings)
         // so the player isn't left on a blank screen.
-        if (resumedOnce && !playFailed && currentUrl.isNotEmpty()) try { play(currentUrl) } catch (_: Exception) {}
+        if (resumedOnce && !playFailed && currentUrl.isNotEmpty()) {
+            if (isVod && vodLastPos > 0) startSeekTo = vodLastPos   // return from Settings → resume where we were
+            try { play(currentUrl) } catch (_: Exception) {}
+        }
         resumedOnce = true
     }
 
@@ -881,12 +1073,15 @@ class LiveVlcActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        if (isVod) { vodLastPos = mp?.time ?: 0L; saveVodResume() }
         stopRecordingIfActive()
         mp?.stop()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        if (isVod) saveVodResume()
+        ui.removeCallbacks(resumeSaver)
         hideBarRunnable?.let { ui.removeCallbacks(it) }
         pendingSwitch?.let { ui.removeCallbacks(it) }
         ui.removeCallbacks(nowProgressTick)
