@@ -21,6 +21,8 @@ class KidMoviesActivity : AppCompatActivity() {
     private var connected = false
     private var inStreaming = false        // in the "Live Movies & Shows" list (or deeper)
     private var inSeries: String? = null   // non-null = viewing a series' episodes
+    private var band = AgeBands.YOUNGER
+    private var streamingRows: List<ChannelsActivity.Row> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +30,12 @@ class KidMoviesActivity : AppCompatActivity() {
         setContentView(b.root)
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
+        band = Profiles.activeBand(this)
+        b.search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) { applyStreamingFilter(s?.toString() ?: "") }
+            override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+            override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
+        })
 
         connectPortal()
         showHome()
@@ -58,6 +66,7 @@ class KidMoviesActivity : AppCompatActivity() {
     private fun showHome() {
         inStreaming = false; inSeries = null
         b.title.text = "Movies & Shows"
+        b.search.visibility = View.GONE
         b.status.visibility = View.GONE
         adapter.submit(listOf(
             ChannelsActivity.Row("📺  Live Movies & Shows", null, "") { showStreaming() },
@@ -77,17 +86,38 @@ class KidMoviesActivity : AppCompatActivity() {
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
         val rows = ArrayList<ChannelsActivity.Row>()
         movies.forEach { v ->
-            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { playMovie(v) })
+            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
         }
         bySeries.forEach { (sid, eps) ->
             val name = eps.first().seriesName
             rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
         }
         rows.sortBy { it.sortKey.lowercase() }
-        b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-        if (rows.isEmpty()) b.status.text = "Nothing added yet. Ask a grown-up to add movies or shows."
-        adapter.submit(rows)
+        streamingRows = rows
+        b.search.visibility = if (AgeBands.showsSearch(band) && rows.isNotEmpty()) View.VISIBLE else View.GONE
+        applyStreamingFilter(b.search.text?.toString() ?: "")
         b.list.scrollToPosition(0)
+    }
+
+    /** Filter the streaming list by the search box (only shown for Older+ bands). */
+    private fun applyStreamingFilter(q: String) {
+        val query = q.trim().lowercase()
+        val filtered = if (query.isEmpty()) streamingRows else streamingRows.filter { it.sortKey.lowercase().contains(query) }
+        b.status.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        b.status.text = when {
+            streamingRows.isEmpty() -> "Nothing added yet. Ask a grown-up to add movies or shows."
+            filtered.isEmpty() -> "No matches."
+            else -> ""
+        }
+        adapter.submit(filtered)
+    }
+
+    /** Preschool taps a movie and it just plays; older bands open a band-aware preview screen first. */
+    private fun openMovie(v: Portal.VodItem) {
+        if (AgeBands.tapPlaysDirectly(band)) { playMovie(v); return }
+        startActivity(Intent(this, KidDetailActivity::class.java)
+            .putExtra("vodId", v.id).putExtra("cmd", v.cmd)
+            .putExtra("title", v.name).putExtra("poster", v.posterUrl))
     }
 
     private fun showEpisodes(seriesId: String) {
@@ -95,6 +125,7 @@ class KidMoviesActivity : AppCompatActivity() {
         if (eps.isEmpty()) { showStreaming(); return }
         inStreaming = true; inSeries = seriesId
         b.title.text = eps.first().seriesName
+        b.search.visibility = View.GONE
         b.status.visibility = View.GONE
         adapter.submit(eps.map { ep ->
             ChannelsActivity.Row("🎬  ${ep.name}", ep.poster, ep.name) { playEpisode(ep) }

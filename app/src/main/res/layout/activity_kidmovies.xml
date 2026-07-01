@@ -15,6 +15,19 @@
         android:textSize="22sp"
         android:textStyle="bold" />
 
+    <EditText
+        android:id="@+id/search"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="6dp"
+        android:hint="Search"
+        android:textColor="#e6edf3"
+        android:textColorHint="#6b7684"
+        android:inputType="text"
+        android:maxLines="1"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/status"
         android:layout_width="match_parent"
