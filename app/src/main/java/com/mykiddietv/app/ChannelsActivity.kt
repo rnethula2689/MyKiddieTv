@@ -1826,11 +1826,17 @@ class ChannelsActivity : AppCompatActivity() {
     /** Distinct values for a filter attribute that actually apply to the current folder's items.
      *  Genre drops any value equal to the folder name: some portals copy the category name into the
      *  genre field, which would otherwise show the folder name itself as a bogus "genre". */
+    private fun normName(s: String) = s.trim().replace(Regex("\\s+"), " ").lowercase()
+
     private fun filterValues(attr: String): List<String> {
-        val folder = backStack.lastOrNull()?.title?.trim()
+        // This provider stores CATEGORY names in the genre field (e.g. "ENGLISH | AMAZON"), not real
+        // genres. Drop any value that looks like a category — contains " | ", or matches a known
+        // category / the folder name — leaving only true genres (Action, Comedy, …).
+        val catNames = (vodCats.ifEmpty { cachedVodCats }).map { normName(it.title) }.toHashSet()
+        backStack.lastOrNull()?.title?.let { catNames.add(normName(it)) }
         return when (attr) {
-            "Genre" -> vodBase.map { it.genre.trim() }.filter { it.isNotBlank() }
-                .filter { folder == null || !it.equals(folder, ignoreCase = true) }
+            "Genre" -> vodBase.map { it.genre.trim() }
+                .filter { it.isNotBlank() && !it.contains("|") && normName(it) !in catNames }
                 .distinct().sorted()
             "Year" -> vodBase.map { it.year }.filter { it.isNotBlank() }.distinct().sortedByDescending { it.toIntOrNull() ?: 0 }
             "Decade" -> vodBase.map { vodDecade(it.year) }.filter { it.isNotBlank() }.distinct().sortedDescending()
