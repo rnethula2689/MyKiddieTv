@@ -37,6 +37,7 @@ class KidDetailActivity : AppCompatActivity() {
 
     private lateinit var backdrop: ImageView
     private lateinit var posterView: ImageView
+    private lateinit var titleView: TextView
     private lateinit var ratingsView: TextView
     private lateinit var overviewView: TextView
     private lateinit var trailerBtn: Button
@@ -74,11 +75,12 @@ class KidDetailActivity : AppCompatActivity() {
         if (poster.isNotBlank()) posterView.load(poster)
         col.addView(posterView)
 
-        col.addView(TextView(this).apply {
-            text = title; textSize = 24f; setTextColor(0xFFFFFFFF.toInt())
+        titleView = TextView(this).apply {
+            text = Tmdb.cleanTitle(title); textSize = 24f; setTextColor(0xFFFFFFFF.toInt())
             gravity = Gravity.CENTER; setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) }
-        })
+        }
+        col.addView(titleView)
 
         ratingsView = TextView(this).apply {
             textSize = 16f; setTextColor(0xFFFFD54F.toInt()); gravity = Gravity.CENTER
@@ -148,6 +150,7 @@ class KidDetailActivity : AppCompatActivity() {
             trailerKey = d.trailers.firstOrNull()?.youtubeKey
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
+                if (d.title.isNotBlank()) titleView.text = d.title
                 (d.backdropUrl ?: d.posterUrl)?.let { backdrop.load(it) }
                 if (poster.isBlank()) d.posterUrl?.let { posterView.load(it) }
                 if (AgeBands.showsDescription(band) && d.overview.isNotBlank()) {
