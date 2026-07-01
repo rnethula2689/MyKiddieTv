@@ -238,7 +238,33 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         })
+        applyAudioBoost(p)
         return p
+    }
+
+    private var loudness: android.media.audiofx.LoudnessEnhancer? = null
+
+    /** Boost quiet titles beyond 100% via a LoudnessEnhancer on the player's own audio session (gain
+     *  from Configs). Safe no-op on devices that don't support the effect. */
+    private fun applyAudioBoost(p: ExoPlayer) {
+        try { loudness?.release() } catch (_: Exception) {}
+        loudness = null
+        try {
+            val sid = ScreenControls.audio(this).generateAudioSessionId()
+            p.setAudioSessionId(sid)
+            val mb = Configs.audioBoostMb(this)
+            loudness = android.media.audiofx.LoudnessEnhancer(sid).apply { setTargetGain(mb); enabled = mb > 0 }
+        } catch (_: Exception) { loudness = null }
+    }
+
+    /** Cycle the boost level (Off → +4 → +8 → +12 dB) and apply it live. */
+    private fun cycleAudioBoost() {
+        Configs.cycleAudioBoost(this)
+        val mb = Configs.audioBoostMb(this)
+        val l = loudness
+        if (l == null) { Toast.makeText(this, "Audio boost isn't supported on this device.", Toast.LENGTH_SHORT).show(); return }
+        try { l.setTargetGain(mb); l.enabled = mb > 0 } catch (_: Exception) {}
+        Toast.makeText(this, "Audio boost: ${Configs.audioBoostLabel(this)}", Toast.LENGTH_SHORT).show()
     }
 
     /** Rebuild the player (now in software-decode mode) and resume the current stream. */
@@ -315,13 +341,14 @@ class PlayerActivity : AppCompatActivity() {
         val items = if (kidMode)
             arrayOf("💬   Subtitles", autoLabel, "ℹ️   About")
         else
-            arrayOf(SleepTimer.menuLabel(), "🎚   Playback settings", "⚠   Report not working", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
+            arrayOf(SleepTimer.menuLabel(), "🎚   Playback settings", "🔊   Audio boost: ${Configs.audioBoostLabel(this)}", "⚠   Report not working", "💬   Subtitles", autoLabel, "⚙   Settings", "📥   App updates", "ℹ️   About", "✖   Exit")
         val dlg = AlertDialog.Builder(this)
             .setItems(items) { _, which ->
                 val action = items[which]
                 when {
                     action.contains("Sleep") -> SleepTimer.showDialog(this)
                     action.contains("Playback") -> PlaybackSettings.show(this)
+                    action.contains("Audio boost") -> cycleAudioBoost()
                     action.contains("Report") -> {
                         Reports.add(this, titleText, resumeSource.ifBlank { "vod" })
                         Toast.makeText(this, "Reported — logged in Settings ▸ Diagnostics.", Toast.LENGTH_SHORT).show()
@@ -752,5 +779,7 @@ class PlayerActivity : AppCompatActivity() {
         saveResume()
         player?.release()
         player = null
+        try { loudness?.release() } catch (_: Exception) {}
+        loudness = null
     }
 }
