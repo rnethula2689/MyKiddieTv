@@ -230,7 +230,8 @@ in the live player.
     lifts the volume above the normal 100% and is remembered for next time.
   - A movie won't play smoothly in the default player: from the parent-side
     player menu pick "Switch player (VLC)" to play it through the VLC engine
-    (it handles some codecs/containers better). Position, Continue Watching and
+    (it handles some codecs/containers better). The VLC player has all the same
+    menu options, and position, subtitles, speed, Continue Watching and
     autoplay-next carry over; "Switch player (Default)" switches back.
   - No guide: set an external XMLTV source in Settings > TV Guide (EPG).
   - App closed unexpectedly: Settings > Troubleshooting shows the last crash
