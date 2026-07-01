@@ -21,7 +21,6 @@ class KidHomeActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityKidhomeBinding.inflate(layoutInflater)
         setContentView(b.root)
-        android.util.Log.i("OMDBDBG", "startup omdbKeyLen=${BuildConfig.OMDB_KEY.length}")
 
         b.greeting.text = "Hi ${Profiles.kidName(this)}! 👋"
 
