@@ -18,8 +18,12 @@ MyKiddieTv has two sides:
   - A simple Kids home where children only see what you allow.
   - A parent area (Settings) protected by a passcode, where you configure
     everything below.
-Set your parent passcode first (Settings > Parental PIN), then build the
-child's allowed list (Settings > Profiles / whitelist).
+You can set up MULTIPLE children, each with their own name, picture, AGE BAND
+and allowed content. The age band tailors how much each child's view shows -
+the youngest just tap-and-watch, while older kids get search, trailers and
+ratings (see section 4).
+Set your parent passcode first (Settings > Parental PIN), then add each child
+and choose their content.
 
 
 2. GETTING STARTED — ADD YOUR PROVIDER
@@ -39,13 +43,43 @@ This PIN protects Settings and the parent-only areas, so children can't
 change what they're allowed to watch or exit kids mode.
 
 
-4. BUILD THE CHILD'S ALLOWED LIST (WHITELIST / PROFILES)
---------------------------------------------------------
-  1. Settings > Profiles.
-  2. Create a profile for your child and choose exactly which channels and
-     which movie/series categories it may show.
-  3. The Kids home then displays only those picks.
-(To change the Kids PICTURE on the "Who's watching?" screen, see section 7.)
+4. KID PROFILES, AGE BANDS & CONTENT
+------------------------------------
+You can create one profile per child, each with its own name, picture, age
+band and allowed content.
+
+Add or edit a child:
+  1. On "Who's watching?", tap "+ Add kid" (or long-press an existing kid
+     tile > Edit). Enter the parent passcode if asked.
+  2. Enter the child's NAME.
+  3. Choose an AGE BAND - this decides how much their view shows:
+       - Preschool (2-4, rated G / TV-Y): tap a title and it just plays -
+         no extra screens.
+       - Younger Kids (5-8, G-PG / TV-G): a simple preview (big Play button,
+         a trailer, a short description).
+       - Older Kids (9-12, PG / TV-PG): adds a full description and search.
+       - Teens (13-17, PG-13 / TV-14): adds IMDb / Rotten Tomatoes ratings
+         and the full info screen.
+  4. Pick a PICTURE (a fun icon, a photo, or the default teddy bear).
+  5. Save - the child appears on "Who's watching?".
+
+Choose HOW each child gets content — Manage Kid Content (parent Home, or
+Settings > Kids) > "Content settings for <name>":
+  - HAND-PICK (you curate): you approve each title yourself. Optionally tick
+    "While I pick, hide titles above the cap" so YOUR browsing list only shows
+    age-appropriate titles while you choose.
+  - AUTO (the app curates): the child can browse everything within their age
+    rating cap automatically - no picking needed. Handy for teens.
+  - "Hide titles with no age rating": some titles have no rating on record -
+    turn this ON to hide them (safer) or OFF to show them.
+Ratings come from TMDB (with OMDb as a fallback); a few obscure titles may be
+unrated.
+
+Build a hand-picked list:
+  Manage Kid Content > Live TV / Movies & Shows > tick titles > "Add selected".
+  Review or remove anything later under "Approved Content". Each child keeps
+  their OWN separate list.
+(To change a child's PICTURE, long-press their tile > Edit — see section 7.)
 
 
 5. SCREEN TIME & BEDTIME
@@ -63,23 +97,24 @@ Settings > Kids > Watch history shows what your child has watched, with times.
 Use "Clear" to reset it.
 
 
-7. THE "WHO'S WATCHING?" SCREEN & THE KIDS PICTURE
---------------------------------------------------
-When the app opens you see two tiles: Kids and Parent. Tap Kids for the kid
-home; tap Parent (passcode) for Settings and full browsing.
+7. THE "WHO'S WATCHING?" SCREEN
+-------------------------------
+When the app opens you see a tile for each child, a "+ Add kid" tile, and the
+Parent tile. Tap a child for their kid home; tap Parent (passcode) for
+Settings and full browsing.
 
-To change your child's PICTURE (the Kids tile shows a teddy bear by default):
-  1. On the "Who's watching?" screen, PRESS AND HOLD (long-press) the Kids
-     tile. On a remote, hold the OK/centre button on the Kids tile.
-  2. Enter the parent passcode if asked.
-  3. Choose one: "Take a photo", "Choose from gallery", "Pick a fun icon"
-     (animals/toys/etc.), or "Default (teddy bear)".
-The new picture then shows on the Kids tile. (This changes only the picture,
-not the child's name — set the name in Settings > Kids.)
+Manage a child: PRESS AND HOLD (long-press) their tile (parent passcode if
+set) for a menu:
+  - "Manage content" — choose/approve what they can watch.
+  - "Edit" — change name, age band and picture (photo, gallery, fun icon,
+    or the default teddy bear).
+  - "Delete" — remove the profile.
+On a remote, hold the OK/centre button on the tile.
 
-In the kid home, children see big, simple tiles of the allowed channels and
-titles. Selecting one plays it full screen, with no way to wander outside the
-allowed list.
+In the kid home, children see big, simple tiles of what they're allowed to
+watch, with no way to wander outside it. How much appears when they pick a
+title depends on that child's age band (section 4): the youngest just play,
+older kids get a preview / description / ratings.
 
 
 8. WATCHING LIVE TV
@@ -146,10 +181,12 @@ Sleep timer is in the player menu and in Settings.
 16. SETTINGS — EVERY SECTION (PARENT AREA)
 ------------------------------------------
   - IPTV configuration: add/edit your provider(s).
-  - Profiles: the child's allowed channels/categories.
+  - Profiles: content-filter profiles for the parent browse (which categories
+    show). (Kid profiles themselves live on the "Who's watching?" screen.)
   - Personalization: hide the "Recently Added" and/or "For You" rows.
   - Remote control (key mapping): re-assign remote buttons - see 17.
-  - Kids: screen-time limit, bedtime, and watch history.
+  - Kids: manage each child's content, age band & content mode (hand-pick vs
+    auto), screen-time limit, bedtime, and watch history.
   - Parental PIN: the passcode that protects this area.
   - Playback settings: buffering and hardware decoding (raise buffer for
     stutter; turn hardware decoding off if a video won't play).
