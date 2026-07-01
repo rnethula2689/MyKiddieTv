@@ -220,6 +220,11 @@ in the live player.
   - "Couldn't open ... unexpected response": provider hiccup - try again.
   - Buffering/failure: it auto-retries; try Retry in the player menu, or raise
     the buffer in Playback settings.
+  - A movie STUTTERS at the start or after seeking (most common with 4K/UHD
+    titles or on a slower/public Wi-Fi): set Settings > Playback settings >
+    Buffer to HIGH - it pre-loads much more before playing and usually removes
+    the stutter. Keep Hardware decoding ON, and prefer home Wi-Fi over a public
+    hotspot for 4K.
   - No guide: set an external XMLTV source in Settings > TV Guide (EPG).
   - App closed unexpectedly: Settings > Troubleshooting shows the last crash
     details; "Clear" dismisses it.
