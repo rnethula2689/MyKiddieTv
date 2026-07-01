@@ -1725,7 +1725,11 @@ class ChannelsActivity : AppCompatActivity() {
                 pageIo.submit(java.util.concurrent.Callable { Portal.vodList(cat.id, p, "added").first })
             }
             val rest = ArrayList<Portal.VodItem>()
-            for (f in futures) { try { rest.addAll(f.get()) } catch (_: Exception) {} }
+            for (f in futures) {
+                try { rest.addAll(f.get()) } catch (_: Exception) {}
+                val soFar = first.size + rest.size
+                runOnUiThread { if (seq == vodLoadSeq) b.status.text = "Loading… $soFar titles" }
+            }
             runOnUiThread {
                 if (seq != vodLoadSeq) return@runOnUiThread
                 vodBase = ArrayList<Portal.VodItem>(first).also { it.addAll(rest) }
@@ -1743,6 +1747,10 @@ class ChannelsActivity : AppCompatActivity() {
         val rows = ArrayList<Row>()
         sorted.forEach { rows.add(vodItemRow(it, poster = true)) }
         adapter.submit(rows)
+        // Header count: total titles in the folder, or "shown / total" when a filter/search is active.
+        val total = vodBase.size
+        val base = (vodCatRef?.title ?: backStack.lastOrNull()?.title ?: "Movies").substringBefore("  (")
+        b.title.text = if (rows.size != total) "$base  (${rows.size} / $total)" else "$base  ($total)"
         val pos = focusPos.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
         b.list.scrollToPosition(pos)
         b.list.post {
@@ -1877,7 +1885,7 @@ class ChannelsActivity : AppCompatActivity() {
                     b.status.text = "No seasons found for ${series.name}."
                     return@runOnUiThread
                 }
-                push(Page(series.name, seasons.reversed().map { s ->
+                push(Page("${series.name}  (${seasons.size} season${if (seasons.size == 1) "" else "s"})", seasons.reversed().map { s ->
                     val favE = Favorites.Entry("season", "${series.id}_${s.id}", "${series.name}  /  ${s.name}", series.posterUrl, "season|${series.id}|${s.id}")
                     val fav = vodFav("season", favE)
                     Row(s.name, null, fav = fav) { showEpisodes(series, s) }
@@ -1910,7 +1918,7 @@ class ChannelsActivity : AppCompatActivity() {
                         "ep|${series.id}|${season.id}|${ep.id}"
                     )
                 }
-                push(Page("${series.name} — ${season.name}", ordered.mapIndexed { idx, e ->
+                push(Page("${series.name} — ${season.name}  (${ordered.size})", ordered.mapIndexed { idx, e ->
                     val title = "${series.name}  /  ${season.name}  /  ${e.name}"
                     val favE = Favorites.Entry("episode", "${series.id}_${season.id}_${e.id}", title, series.posterUrl, "ep|${series.id}|${season.id}|${e.id}")
                     val fav = vodFav("episode", favE)
