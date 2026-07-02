@@ -191,6 +191,10 @@ Sleep timer is in the player menu and in Settings.
   - Playback settings: buffering and hardware decoding (raise buffer for
     stutter; turn hardware decoding off if a video won't play).
   - Sleep timer: auto-stop after a set time; can close the app when it fires.
+    While it runs, a timer chip with a live m:ss countdown shows in the top bar -
+    select it to change/extend or turn it off.
+  - Fast-scroll: in a long list, HOLD Up to jump to the top / A-Z bar. In the
+    User Guide, Up/Down page-scroll.
   - Storage: clear Cache, Favourites, Watch Later, Continue Watching,
     Downloads, or Recordings - selectively or all.
   - Subtitles: OpenSubtitles API key.
