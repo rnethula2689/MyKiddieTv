@@ -64,12 +64,27 @@ class PlayerActivity : AppCompatActivity() {
     private fun volSet(v: Int) {
         val c = v.coerceIn(0, volMax())
         if (onTv) player?.volume = c / 100f else ScreenControls.setVolume(am, c)
+        PlayPrefs.noteVolume(if (volMax() > 0) c * 100 / volMax() else 0)
     }
     private fun brightGetPct() = if (onTv) ((1f - tvDim) * 100).toInt() else (ScreenControls.brightness(window) * 100).toInt()
     private fun brightSetPct(pct: Int) {
         val f = pct.coerceIn(0, 100) / 100f
         if (onTv) { tvDim = (1f - f).coerceIn(0f, 0.92f); b.dimOverlay.alpha = tvDim }
         else ScreenControls.setBrightness(window, f)
+        PlayPrefs.brightPct = pct.coerceIn(0, 100)
+    }
+
+    /** Apply the session mute/volume (TV drives the player's own volume; tablets use system volume). */
+    private fun applyPlayPrefsAudio() {
+        if (!onTv) return
+        val lvl = if (PlayPrefs.volPct >= 0) PlayPrefs.volPct / 100f else 1f
+        player?.volume = if (PlayPrefs.muted) 0f else lvl
+    }
+
+    /** Apply the session brightness + night mode overlays. */
+    private fun applyPlayPrefsScreen() {
+        if (PlayPrefs.brightPct in 0..100) brightSetPct(PlayPrefs.brightPct)
+        if (PlayPrefs.night) { nightOn = true; b.nightOverlay.visibility = View.VISIBLE; b.nightBtn.text = "🌙  Night mode: ON" }
     }
     private var epList: List<PlaylistItem> = emptyList()
     private var epIndex = -1
@@ -83,10 +98,15 @@ class PlayerActivity : AppCompatActivity() {
         // Set just before launching an episode so the player can auto-advance to the next one.
         var playlist: List<PlaylistItem> = emptyList()
         var playlistIndex = -1
+        // Session engine preference: once the user switches a movie to VLC, new movies open in VLC
+        // until they switch back to Default (or restart the app).
+        var preferVlc = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Honour the session engine choice: route movies straight to VLC without building ExoPlayer.
+        if (routeToPreferredEngine()) return
         b = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(b.root)
         PipService.stop(this) // opening fullscreen playback closes any existing pop-up
@@ -121,6 +141,7 @@ class PlayerActivity : AppCompatActivity() {
         b.subBtn.setOnClickListener { searchSubtitles() }
         b.menuBtn.setOnClickListener { showMenu() }
         wireQuickControls()
+        applyPlayPrefsScreen()   // restore session brightness + night mode
 
         // Episode playlist (for autoplay-next), handed over via the companion then consumed once.
         epList = playlist
@@ -155,6 +176,7 @@ class PlayerActivity : AppCompatActivity() {
         p.prepare()
         if (resumeStart > 0 && !isLive) p.seekTo(resumeStart)
         p.playWhenReady = true
+        applyPlayPrefsAudio()   // restore session mute/volume
 
         if (resumeId.isNotBlank() && !isLive) resumeHandler.postDelayed(resumeSaver, 10_000)
 
@@ -174,6 +196,11 @@ class PlayerActivity : AppCompatActivity() {
             val f = File(carrySub)
             if (f.exists()) b.playerView.postDelayed({ applySubtitleFile(f, toast = false) }, 800)
         }
+
+        // TV: land focus on the seek bar (not Play/Pause) on open so D-pad rewind/forward work at once.
+        if (onTv && !isLive) b.playerView.postDelayed({
+            b.playerView.findViewById<View>(androidx.media3.ui.R.id.exo_progress)?.requestFocus()
+        }, 600)
         screenLock = ScreenLock(this)
     }
 
@@ -402,6 +429,27 @@ class PlayerActivity : AppCompatActivity() {
         dlg.show()
     }
 
+    /** If the user's session engine choice is VLC, forward this movie to the VLC player and finish
+     *  (before ExoPlayer/UI is built). Returns true if it routed. */
+    private fun routeToPreferredEngine(): Boolean {
+        val url = intent.getStringExtra("url") ?: ""
+        if (!preferVlc || url.isEmpty() || intent.getBooleanExtra("live", false)) return false
+        LiveVlcActivity.kidMode = false
+        LiveVlcActivity.vodPlaylist = playlist
+        LiveVlcActivity.vodPlaylistIndex = playlistIndex
+        playlist = emptyList(); playlistIndex = -1
+        startActivity(android.content.Intent(this, LiveVlcActivity::class.java)
+            .putExtra("url", url)
+            .putExtra("title", intent.getStringExtra("title") ?: "")
+            .putExtra("vod", true)
+            .putExtra("resumeId", intent.getStringExtra("resumeId") ?: "")
+            .putExtra("resumeSource", intent.getStringExtra("resumeSource") ?: "")
+            .putExtra("resumePoster", intent.getStringExtra("resumePoster") ?: "")
+            .putExtra("resumeStart", intent.getLongExtra("resumeStart", 0L)))
+        finish()
+        return true
+    }
+
     /** Hand the current title to the libVLC engine (some containers/codecs play cleaner there),
      *  carrying the position, Continue-Watching identity and the episode playlist so resume,
      *  Continue Watching and autoplay-next keep working in VLC exactly as they do here. */
@@ -410,6 +458,7 @@ class PlayerActivity : AppCompatActivity() {
         val pos = p.currentPosition
         val dur = p.duration
         saveResume()
+        preferVlc = true   // remember VLC for the session → new titles open in VLC too
         LiveVlcActivity.kidMode = false   // reachable only from the parent-side player menu
         LiveVlcActivity.vodPlaylist = epList
         LiveVlcActivity.vodPlaylistIndex = epIndex
@@ -773,6 +822,7 @@ class PlayerActivity : AppCompatActivity() {
         nightOn = !nightOn
         b.nightOverlay.visibility = if (nightOn) View.VISIBLE else View.GONE
         b.nightBtn.text = if (nightOn) "🌙  Night mode: ON" else "🌙  Night mode"
+        PlayPrefs.night = nightOn
     }
 
     /** A finished movie: ask whether to drop it from Continue Watching (TV + tablet). */

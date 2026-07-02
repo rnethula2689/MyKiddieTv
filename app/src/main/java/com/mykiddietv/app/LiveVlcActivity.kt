@@ -43,6 +43,7 @@ class LiveVlcActivity : AppCompatActivity() {
     private var chIndex = -1
     private var titleText = ""
     private var hideBarRunnable: Runnable? = null
+    private var vlcAttached = false   // video surface attached? (detach on stop, re-attach on resume)
     private var screenLock: ScreenLock? = null
 
     private var isArchive = false
@@ -85,12 +86,27 @@ class LiveVlcActivity : AppCompatActivity() {
     private fun volSet(v: Int) {
         val c = v.coerceIn(0, volMax())
         if (onTv) mp?.volume = c else ScreenControls.setVolume(am, c)
+        PlayPrefs.noteVolume(if (volMax() > 0) c * 100 / volMax() else 0)
+    }
+
+    /** Apply the session mute/volume to the current player (audio output must already exist). */
+    private fun applyPlayPrefsAudio() {
+        if (!onTv) return   // tablets use the system volume, which persists on its own
+        val lvl = if (PlayPrefs.volPct >= 0) PlayPrefs.volPct * volMax() / 100 else volMax()
+        mp?.volume = if (PlayPrefs.muted) 0 else lvl
+    }
+
+    /** Apply the session brightness + night mode (screen overlays; safe to call any time). */
+    private fun applyPlayPrefsScreen() {
+        if (PlayPrefs.brightPct in 0..100) brightSetPct(PlayPrefs.brightPct)
+        if (PlayPrefs.night) { nightOn = true; b.nightOverlay.visibility = View.VISIBLE; b.nightBtn.text = "🌙  Night mode: ON" }
     }
     private fun brightGetPct() = if (onTv) ((1f - tvDim) * 100).toInt() else (ScreenControls.brightness(window) * 100).toInt()
     private fun brightSetPct(pct: Int) {
         val f = pct.coerceIn(0, 100) / 100f
         if (onTv) { tvDim = (1f - f).coerceIn(0f, 0.92f); b.dimOverlay.alpha = tvDim }
         else ScreenControls.setBrightness(window, f)
+        PlayPrefs.brightPct = pct.coerceIn(0, 100)
     }
     private val aspectModes = listOf("Fit", "16:9", "4:3", "Stretch")
     private var aspectIdx = 0
@@ -190,36 +206,12 @@ class LiveVlcActivity : AppCompatActivity() {
         )
         val vlc = LibVLC(this, options)
         libVlc = vlc
-        val player = MediaPlayer(vlc)
-        mp = player
-        player.attachViews(b.vlc, null, false, false)
-        player.setEventListener { ev ->
-            when (ev.type) {
-                MediaPlayer.Event.Playing -> {
-                    b.status.visibility = View.GONE; retryCount = 0; playFailed = false; applyAspect()
-                    if (onTv && (mp?.volume ?: 0) <= 0) mp?.volume = 100 // TV: seed a real volume so the icon isn't stuck on 🔇
-                    applyVlcBoost() // amplify quiet VOD titles per the shared Audio-boost setting
-                    refreshVol() // reflect the true volume/mute state now that audio output exists
-                    if (isVod) applyVodPlaybackState() // re-apply carried speed + subtitle
-                    if (isArchive || timeshifting) b.playBtn.text = "⏸"
-                }
-                MediaPlayer.Event.Paused -> { if (isArchive || timeshifting) b.playBtn.text = "▶" }
-                MediaPlayer.Event.EndReached -> {
-                    if (isVod) ui.post { onVodEnded() }
-                    else if (isArchive) b.playBtn.text = "▶"
-                    else if (timeshifting) ui.post { returnToLive() }
-                }
-                MediaPlayer.Event.EncounteredError ->
-                    if (!isArchive && !timeshifting) autoRetry()
-                    else b.status.apply { visibility = View.VISIBLE; text = "Couldn't play this." }
-                MediaPlayer.Event.RecordChanged -> { if (!ev.recording) ui.post { onRecordingStopped() } }
-                else -> {}
-            }
-        }
+        buildVlcPlayer(vlc)
 
         b.menuBtn.setOnClickListener { showMenu() }
         b.root.setOnTouchListener { _, ev -> gestureDetector.onTouchEvent(ev) }
         wireQuickControls()
+        applyPlayPrefsScreen()   // restore session brightness + night mode
         val tv = Tv.isTv(this)
         b.pipBtn.setOnClickListener { enterPipFlow() }
         b.pipBtn.visibility = if (!isArchive && !kidMode && !tv) View.VISIBLE else View.GONE
@@ -413,11 +405,76 @@ class LiveVlcActivity : AppCompatActivity() {
         Resume.save(applicationContext, Resume.LIVE_ID, "live", ch.name, ch.logoUrl, "live|${ch.id}|${ch.cmd}", 0, 0)
     }
 
+    /** Create a fresh MediaPlayer bound to the video surface + event listener. */
+    private fun buildVlcPlayer(vlc: LibVLC) {
+        val player = MediaPlayer(vlc)
+        mp = player
+        player.attachViews(b.vlc, null, false, false)
+        vlcAttached = true
+        player.setEventListener { ev -> onVlcEvent(ev) }
+    }
+
+    private fun onVlcEvent(ev: MediaPlayer.Event) {
+        when (ev.type) {
+            MediaPlayer.Event.Playing -> {
+                b.status.visibility = View.GONE; retryCount = 0; playFailed = false; applyAspect()
+                applyPlayPrefsAudio() // restore session mute/volume (survives channel changes & re-entry)
+                applyVlcBoost() // amplify quiet VOD titles per the shared Audio-boost setting
+                refreshVol() // reflect the true volume/mute state now that audio output exists
+                if (isVod) applyVodPlaybackState() // re-apply carried speed + subtitle
+                if (isArchive || timeshifting) b.playBtn.text = "⏸"
+            }
+            MediaPlayer.Event.Paused -> { if (isArchive || timeshifting) b.playBtn.text = "▶" }
+            MediaPlayer.Event.EndReached -> {
+                if (isVod) ui.post { onVodEnded() }
+                else if (isArchive) b.playBtn.text = "▶"
+                else if (timeshifting) ui.post { returnToLive() }
+            }
+            MediaPlayer.Event.EncounteredError ->
+                if (!isArchive && !timeshifting) autoRetry()
+                else b.status.apply { visibility = View.VISIBLE; text = "Couldn't play this." }
+            MediaPlayer.Event.RecordChanged -> { if (!ev.recording) ui.post { onRecordingStopped() } }
+            else -> {}
+        }
+    }
+
+    /** Returning to the foreground: the surface was torn down and (for live) the stream token is often
+     *  dead, so rebuild the player from scratch and re-resolve a fresh link. */
+    private fun rebuildAndResume() {
+        val vlc = libVlc ?: return
+        try { mp?.let { it.stop(); if (vlcAttached) it.detachViews(); it.release() } } catch (_: Exception) {}
+        vlcAttached = false
+        buildVlcPlayer(vlc)
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
+        if (isVod || timeshifting) {
+            if (isVod && vodLastPos > 0) startSeekTo = vodLastPos
+            try { play(currentUrl) } catch (_: Exception) { showPlayFailed() }
+            return
+        }
+        val ch = channels.getOrNull(chIndex)
+        if (ch == null) { try { play(currentUrl) } catch (_: Exception) { showPlayFailed() }; return }
+        io.execute {
+            // Coming back from 4-pane multi-view the portal is still freeing those stream slots, so the
+            // first fresh link often comes back empty — retry a few times before giving up.
+            var u: String? = null
+            for (attempt in 0 until 4) {
+                u = Portal.createLink(ch.cmd)
+                if (!u.isNullOrEmpty()) break
+                try { Thread.sleep(700) } catch (_: Exception) {}
+            }
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val url = if (!u.isNullOrEmpty()) u else currentUrl
+                if (!u.isNullOrEmpty()) liveUrl = u
+                try { play(url) } catch (_: Exception) { showPlayFailed() }
+            }
+        }
+    }
+
     private fun play(url: String) {
         val vlc = libVlc ?: return
         val player = mp ?: return
         currentUrl = url
-        vodSubAttached = false   // new media → re-attach the carried subtitle on next Playing
         b.status.visibility = View.VISIBLE
         b.status.text = "Loading…"
         player.stop()
@@ -426,6 +483,8 @@ class LiveVlcActivity : AppCompatActivity() {
         media.addOption(":network-caching=${Configs.netCachingMs(this)}")
         media.addOption(":http-user-agent=" + Portal.UA)
         media.addOption(":http-reconnect")
+        // Subtitle as a media option = the reliable libVLC way (runtime addSlave silently fails on Fire).
+        if (isVod && vodSubPath.isNotEmpty() && java.io.File(vodSubPath).exists()) media.addOption(":sub-file=$vodSubPath")
         player.media = media
         media.release()
         player.play()
@@ -545,6 +604,7 @@ class LiveVlcActivity : AppCompatActivity() {
         val pos = p.time
         saveVodResume()
         PlayerActivity.kidMode = false   // engine switch is a parent-side action
+        PlayerActivity.preferVlc = false // user chose the default engine → new titles open in ExoPlayer
         PlayerActivity.playlist = vodEpList
         PlayerActivity.playlistIndex = vodEpIndex
         val i = Intent(this, PlayerActivity::class.java)
@@ -563,12 +623,6 @@ class LiveVlcActivity : AppCompatActivity() {
     /** Re-apply the carried playback state once the media is playing (idempotent per media). */
     private fun applyVodPlaybackState() {
         try { mp?.rate = vodSpeed } catch (_: Exception) {}
-        if (vodSubPath.isNotEmpty() && !vodSubAttached) {
-            val f = java.io.File(vodSubPath)
-            if (f.exists()) {
-                try { mp?.addSlave(0 /* IMedia.Slave.Type.Subtitle */, Uri.fromFile(f), true); vodSubAttached = true } catch (_: Exception) {}
-            }
-        }
     }
 
     // ---- VOD menu parity: audio boost, subtitles, speed, report ----
@@ -648,13 +702,12 @@ class LiveVlcActivity : AppCompatActivity() {
                     android.widget.Toast.makeText(this, "Couldn't download that subtitle.", android.widget.Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                try {
-                    mp?.addSlave(0 /* IMedia.Slave.Type.Subtitle */, Uri.fromFile(file), true)
-                    vodSubPath = file.absolutePath; vodSubAttached = true
-                    android.widget.Toast.makeText(this, "Subtitle applied ✓", android.widget.Toast.LENGTH_SHORT).show()
-                } catch (_: Exception) {
-                    android.widget.Toast.makeText(this, "Couldn't attach that subtitle.", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                // Reload the stream at the current spot with the subtitle as a media option (reliable
+                // where runtime addSlave silently fails on Fire libVLC).
+                vodSubPath = file.absolutePath
+                startSeekTo = mp?.time ?: 0L
+                play(currentUrl)
+                android.widget.Toast.makeText(this, "Subtitle applied ✓", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -753,6 +806,7 @@ class LiveVlcActivity : AppCompatActivity() {
 
     private fun showBar() {
         b.topBar.visibility = View.VISIBLE
+        if (isVod) b.controlBar.visibility = View.VISIBLE  // VOD transport auto-hides with the top bar
         updateNowBar()
         // The now-bar carries its own "▲ ▼ channel" hint; only show the standalone hint when it isn't on screen.
         b.hint.visibility = if (!isArchive && !timeshifting && b.nowBar.visibility != View.VISIBLE) View.VISIBLE else View.GONE
@@ -837,6 +891,7 @@ class LiveVlcActivity : AppCompatActivity() {
         b.volumePanel.visibility = View.GONE
         b.brightnessPanel.visibility = View.GONE
         b.nowBar.visibility = View.GONE
+        if (isVod) b.controlBar.visibility = View.GONE  // movie transport hides too (was pinned forever)
         ui.removeCallbacks(nowProgressTick)
     }
 
@@ -973,6 +1028,7 @@ class LiveVlcActivity : AppCompatActivity() {
         nightOn = !nightOn
         b.nightOverlay.visibility = if (nightOn) View.VISIBLE else View.GONE
         b.nightBtn.text = if (nightOn) "🌙  Night mode: ON" else "🌙  Night mode"
+        PlayPrefs.night = nightOn
     }
 
     /** Start/stop recording the current stream (video + audio) to local storage → Recordings. */
@@ -1130,11 +1186,16 @@ class LiveVlcActivity : AppCompatActivity() {
             // User-defined remote key mapping takes priority (Settings ▸ Remote control). Back/Home never hijacked.
             RemoteMap.actionFor(this, event.keyCode)?.let { performMapped(it); return true }
             if (isArchive) {
+                if (event.keyCode == KeyEvent.KEYCODE_MENU) { showMenu(); return true }
+                // VOD, ExoPlayer-style: when controls are hidden, the first press just reveals them
+                // (and the top ⋮ menu) instead of acting. Catch-up keeps its immediate seek.
+                val revealFirst = isVod && b.topBar.visibility != View.VISIBLE
                 when (event.keyCode) {
-                    KeyEvent.KEYCODE_MENU -> { showMenu(); return true }
-                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { seekBy(-15_000); showBar(); return true }
-                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekBy(15_000); showBar(); return true }
-                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { togglePlay(); return true }
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { if (revealFirst) showBar() else { seekBy(-15_000); showBar() }; return true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { if (revealFirst) showBar() else { seekBy(15_000); showBar() }; return true }
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { if (revealFirst) showBar() else { togglePlay(); showBar() }; return true }
+                    KeyEvent.KEYCODE_DPAD_UP -> { showBar(); b.topBar.post { b.topBar.requestFocus() }; return true }   // reach the ⋮ menu
+                    KeyEvent.KEYCODE_DPAD_DOWN -> { showBar(); return true }
                 }
             } else if (timeshifting) {
                 when (event.keyCode) {
@@ -1187,12 +1248,9 @@ class LiveVlcActivity : AppCompatActivity() {
             if (isFinishing) return // KidLimits may have sent us to the lock screen
             if (!kidHistoryLogged) { KidHistory.add(this, titleText); kidHistoryLogged = true }
         }
-        // onStop() stops playback to free the stream; re-start it when we return (e.g. from Settings)
-        // so the player isn't left on a blank screen.
-        if (resumedOnce && !playFailed && currentUrl.isNotEmpty()) {
-            if (isVod && vodLastPos > 0) startSeekTo = vodLastPos   // return from Settings → resume where we were
-            try { play(currentUrl) } catch (_: Exception) {}
-        }
+        // onStop() stops playback to free the stream; rebuild + re-resolve when we return so the player
+        // isn't left blank-with-audio (or hung on Loading with a dead token).
+        if (resumedOnce && !playFailed && currentUrl.isNotEmpty()) rebuildAndResume()
         resumedOnce = true
     }
 
@@ -1206,6 +1264,8 @@ class LiveVlcActivity : AppCompatActivity() {
         if (isVod) { vodLastPos = mp?.time ?: 0L; saveVodResume() }
         stopRecordingIfActive()
         mp?.stop()
+        // Detach the surface so it re-binds cleanly next time (fixes blank-video-with-audio on return).
+        if (vlcAttached) { try { mp?.detachViews() } catch (_: Exception) {}; vlcAttached = false }
     }
 
     override fun onDestroy() {
@@ -1217,7 +1277,8 @@ class LiveVlcActivity : AppCompatActivity() {
         ui.removeCallbacks(nowProgressTick)
         ui.removeCallbacks(poller)
         ui.removeCallbacks(applySeek)
-        mp?.let { it.stop(); it.detachViews(); it.release() }
+        mp?.let { it.stop(); if (vlcAttached) try { it.detachViews() } catch (_: Exception) {}; it.release() }
+        vlcAttached = false
         mp = null
         libVlc?.release()
         libVlc = null
