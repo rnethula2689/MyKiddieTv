@@ -409,7 +409,9 @@ class LiveVlcActivity : AppCompatActivity() {
     private fun buildVlcPlayer(vlc: LibVLC) {
         val player = MediaPlayer(vlc)
         mp = player
-        player.attachViews(b.vlc, null, false, false)
+        // 3rd arg = enableSubtitles: MUST be true or libVLC selects the SPU track but never PAINTS it
+        // (the movie plays with no visible subtitle text). This is the real fix for VLC subtitles.
+        player.attachViews(b.vlc, null, true, false)
         vlcAttached = true
         player.setEventListener { ev -> onVlcEvent(ev) }
     }
@@ -483,8 +485,10 @@ class LiveVlcActivity : AppCompatActivity() {
         media.addOption(":network-caching=${Configs.netCachingMs(this)}")
         media.addOption(":http-user-agent=" + Portal.UA)
         media.addOption(":http-reconnect")
-        // Subtitle as a media option = the reliable libVLC way (runtime addSlave silently fails on Fire).
-        if (isVod && vodSubPath.isNotEmpty() && java.io.File(vodSubPath).exists()) media.addOption(":sub-file=$vodSubPath")
+        // Subtitle is attached at runtime via addSlave once Playing (see applyVodPlaybackState) — a single
+        // path, so we don't end up with duplicate/competing SPU tracks. Surface subtitles are enabled in
+        // buildVlcPlayer (attachViews enableSubtitles=true), which is what actually makes them render.
+        vodSubAttached = false
         player.media = media
         media.release()
         player.play()
@@ -623,6 +627,31 @@ class LiveVlcActivity : AppCompatActivity() {
     /** Re-apply the carried playback state once the media is playing (idempotent per media). */
     private fun applyVodPlaybackState() {
         try { mp?.rate = vodSpeed } catch (_: Exception) {}
+        // Attach the subtitle at runtime now that audio/video output exists (once per media).
+        if (vodSubPath.isNotEmpty() && !vodSubAttached) {
+            val f = java.io.File(vodSubPath)
+            if (f.exists()) {
+                try {
+                    mp?.addSlave(0 /* IMedia.Slave.Type.Subtitle */, Uri.fromFile(f), true)
+                    vodSubAttached = true
+                    // The slave track can take a moment to register (longer on the carry path where a fresh
+                    // portal link is still loading), so keep trying to select it until it sticks.
+                    for (d in longArrayOf(400, 1000, 2000, 3500, 5500)) ui.postDelayed({ selectSubtitleTrack() }, d)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /** Turn ON the external subtitle track. libVLC's addSlave(select=true) doesn't reliably show the sub
+     *  on Fire, so we enumerate the SPU tracks and select the last real one (the slave we just added).
+     *  Idempotent + retried, because the track appears asynchronously after addSlave. */
+    private fun selectSubtitleTrack() {
+        val p = mp ?: return
+        try {
+            val tracks = p.spuTracks
+            val target = tracks?.lastOrNull { it.id >= 0 }?.id ?: return
+            if (p.spuTrack != target) p.setSpuTrack(target)
+        } catch (_: Exception) {}
     }
 
     // ---- VOD menu parity: audio boost, subtitles, speed, report ----
