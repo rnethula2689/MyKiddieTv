@@ -168,8 +168,9 @@ play or remove.
 -----------------------
   - Cast to TV (player menu) sends the stream to a DLNA/Chromecast device on
     your network. (Not available on Fire OS devices.)
-  - Subtitles (movie player menu) searches/loads subtitles; add an
-    OpenSubtitles API key in Settings > Subtitles.
+  - Subtitles (movie player menu) searches/loads subtitles, matched to the
+    movie's RELEASE YEAR so you get the right film (not other same-name
+    movies); add an OpenSubtitles API key in Settings > Subtitles.
 
 
 15. PLAYER CONTROLS
