@@ -22,6 +22,23 @@
             android:textSize="20sp"
             android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/kidNameLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="10dp"
+            android:text=""
+            android:textColor="#8b97a5"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/contentGearBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:layout_marginEnd="6dp"
+            android:text="🎛️" />
+
         <Button
             android:id="@+id/searchBtn"
             android:layout_width="wrap_content"

@@ -107,6 +107,7 @@ class ChannelsActivity : AppCompatActivity() {
 
         b.searchBtn.setOnClickListener { toggleSearch() }
         b.reloadBtn.setOnClickListener { connectAndLoad(true) } // true = real portal reconnect, not a cache rebuild
+        b.kidContentBtn.setOnClickListener { openManageKidContent() } // 👶 top-bar shortcut (asks which kid)
         b.sortBtn.setOnClickListener { showSortDialog() }
         b.filterBtn.setOnClickListener { showFilterDialog() }
         b.settingsBtn.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
@@ -1118,9 +1119,8 @@ class ChannelsActivity : AppCompatActivity() {
             }
         }) {})
 
-        // Live/Movies/Favourites/Recordings/Watch Later/Downloads live in the floating bottom tab bar.
-        // Manage Kid Content stays a row (kid-specific, not in the tab bar).
-        rows.add(Row("👶   Manage Kid Content", null) { openManageKidContent() })
+        // Live/Movies/Favourites/Recordings/Watch Later/Downloads live in the floating bottom tab bar;
+        // Manage Kid Content moved to the 👶 icon in the top bar (left of the profile icon).
         push(Page("MyKiddieTv", rows, kind = SearchKind.GLOBAL, rebuild = { showHome() }))
     }
 

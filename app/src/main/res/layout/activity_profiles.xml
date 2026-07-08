@@ -19,11 +19,28 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:layout_marginBottom="30dp"
+        android:layout_marginBottom="22dp"
         android:text="Who's watching?"
         android:textColor="#8b97a5"
         android:textSize="18sp" />
 
+    <!-- Top of the tree: the Parent tile -->
+    <LinearLayout
+        android:id="@+id/parentRow"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal" />
+
+    <!-- Connector down to the kids -->
+    <View
+        android:layout_width="2dp"
+        android:layout_height="22dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="#33ffffff" />
+
+    <!-- The kids branch (+ Add kid). Scrolls horizontally when there are many, so it never gets cut off. -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -72,6 +72,9 @@ class KidContentActivity : AppCompatActivity() {
 
         b.searchBtn.setOnClickListener { toggleSearch() }
         b.clearBtn.setOnClickListener { b.search.setText(""); b.search.requestFocus() }
+        // Show which kid this screen is managing, + a distinct content-settings gear (≠ the general gear).
+        b.kidNameLabel.text = Profiles.kidName(this)
+        b.contentGearBtn.setOnClickListener { contentSettingsDialog() }
         b.search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString() ?: "")
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}

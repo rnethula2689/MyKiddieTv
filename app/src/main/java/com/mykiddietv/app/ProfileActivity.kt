@@ -41,12 +41,14 @@ class ProfileActivity : AppCompatActivity() {
     }
 
     private fun buildTiles() {
+        b.parentRow.removeAllViews()
         b.tileRow.removeAllViews()
         val kids = Profiles.kids(this)
+        // Tree: Parent on top, kids (+ Add kid) branch below — so portrait never cuts the row off.
+        b.parentRow.addView(parentTile())
         kids.forEachIndexed { i, k -> b.tileRow.addView(kidTile(k, palette[i % palette.size])) }
         b.tileRow.addView(addKidTile())
-        b.tileRow.addView(parentTile())
-        b.tileRow.getChildAt(0)?.requestFocus()
+        (b.tileRow.getChildAt(0) ?: b.parentRow.getChildAt(0))?.requestFocus()
     }
 
     // ---- tiles ----
