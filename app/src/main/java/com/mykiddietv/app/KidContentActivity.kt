@@ -360,7 +360,7 @@ class KidContentActivity : AppCompatActivity() {
     private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> {
         val k = Profiles.activeKid(this) ?: return items
         if (k.filterMode != "pick" || !k.filterPickList) return items
-        return items.filter { KidRating.show(this, it.name, "", k.ageBand, k.hideUnrated) }
+        return items.filter { KidRating.show(this, it.name, it.year, k.ageBand, k.hideUnrated) }
     }
 
     // ---- Approved Content (review & remove already-whitelisted items) ----

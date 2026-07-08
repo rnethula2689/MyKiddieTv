@@ -166,7 +166,9 @@ class KidMoviesActivity : AppCompatActivity() {
         val hide = kidHideUnrated()
         val rows = ArrayList<ChannelsActivity.Row>()
         for (v in acc) {
-            if (!KidRating.show(this, v.name, "", band, hide)) continue
+            // Pass the real release year so the cert lookup matches the RIGHT film (an R title must not
+            // get a same-name lower-rated film's certificate and slip past the age cap).
+            if (!KidRating.show(this, v.name, v.year, band, hide)) continue
             if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) })
             else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
         }
