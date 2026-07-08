@@ -71,6 +71,12 @@ object Configs {
     fun hideForYou(ctx: Context): Boolean = prefs(ctx).getBoolean(pKey(ctx, "hideForYou"), false)
     fun setHideForYou(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean(pKey(ctx, "hideForYou"), v).apply() }
 
+    /** Global master switch for the kid age-rating filter in the parent's Manage-Kid-Content browse list.
+     *  Off = show every title (with its rating badge) and curate by hand — for when portal rating data is
+     *  unreliable. Device-wide (not per profile). Kids' own browsing still respects their per-kid age cap. */
+    fun kidFilterEnabled(ctx: Context): Boolean = prefs(ctx).getBoolean("kidFilterEnabled", true)
+    fun setKidFilterEnabled(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean("kidFilterEnabled", v).apply() }
+
     /** A handful of recent poster URLs, used to paint the loading splash montage (Strimix-style). */
     fun splashPosters(ctx: Context): List<String> =
         (prefs(ctx).getString("splashPosters", "") ?: "").split("\n").filter { it.isNotBlank() }

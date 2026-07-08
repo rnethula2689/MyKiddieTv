@@ -330,30 +330,9 @@ class KidContentActivity : AppCompatActivity() {
     // ---- per-kid content settings (hand-pick vs auto, list filter, hide unrated) ----
     private fun contentSettingsDialog() {
         val k = Profiles.activeKid(this) ?: run { b.status.text = "No kid selected."; return }
-        val band = AgeBands.of(k.ageBand)
-        val dp = resources.displayMetrics.density; val pad = (20 * dp).toInt()
-        fun tv(t: String, size: Float, color: Int) = android.widget.TextView(this).apply { text = t; textSize = size; setTextColor(color) }
-        val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
-        col.addView(tv("${k.name}  ·  ${band.emoji} ${band.name}  (cap ${band.rating})", 13f, 0xFF8B97A5.toInt()))
-        col.addView(tv("\nHow should ${k.name} get movies & shows?", 15f, 0xFFE6EDF3.toInt()))
-        val rg = android.widget.RadioGroup(this)
-        val rbPick = android.widget.RadioButton(this).apply { text = "I'll hand-pick titles"; id = 1; setTextColor(0xFFE6EDF3.toInt()) }
-        val rbAuto = android.widget.RadioButton(this).apply { text = "Show everything within their age cap (no picking)"; id = 2; setTextColor(0xFFE6EDF3.toInt()) }
-        rg.addView(rbPick); rg.addView(rbAuto); rg.check(if (k.filterMode == "auto") 2 else 1); col.addView(rg)
-        col.addView(tv("\nTitles above ${k.name}'s age cap (${band.rating}) are always hidden here.", 12f, 0xFF8B97A5.toInt()))
-        val cbHide = android.widget.CheckBox(this).apply { text = "Hide titles with no age rating"; isChecked = k.hideUnrated; setTextColor(0xFFE6EDF3.toInt()) }
-        col.addView(cbHide)
-        AlertDialog.Builder(this)
-            .setTitle("Content settings")
-            .setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                k.filterMode = if (rg.checkedRadioButtonId == 2) "auto" else "pick"
-                k.hideUnrated = cbHide.isChecked
-                Profiles.saveKid(this, k)
-                b.status.text = "Saved settings for ${k.name} ✓"
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        KidContentSettings.show(this, k) {
+            b.status.text = "Saved settings for ${k.name} ✓ — reopen a folder to apply."
+        }
     }
 
     /**
@@ -363,6 +342,11 @@ class KidContentActivity : AppCompatActivity() {
      */
     private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> {
         val k = Profiles.activeKid(this) ?: return items
+        // Global filter off: show every title, but still resolve certs so each row keeps its rating badge.
+        if (!Configs.kidFilterEnabled(this)) {
+            items.forEach { KidRating.cert(this, it.name, it.year) } // runs on io (callers execute on io)
+            return items
+        }
         return items.filter { KidRating.show(this, it.name, it.year, k.ageBand, k.hideUnrated) }
     }
 
