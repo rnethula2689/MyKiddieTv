@@ -62,11 +62,14 @@ object Configs {
     fun epgXmltvUrl(ctx: Context): String = (prefs(ctx).getString("epgXmltvUrl", "") ?: "").trim()
     fun setEpgXmltvUrl(ctx: Context, url: String) { prefs(ctx).edit().putString("epgXmltvUrl", url.trim()).apply() }
 
-    /** Home personalization: when on, the matching rail is omitted from the Home screen. */
-    fun hideRecentlyAdded(ctx: Context): Boolean = prefs(ctx).getBoolean("hideRecentlyAdded", false)
-    fun setHideRecentlyAdded(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean("hideRecentlyAdded", v).apply() }
-    fun hideForYou(ctx: Context): Boolean = prefs(ctx).getBoolean("hideForYou", false)
-    fun setHideForYou(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean("hideForYou", v).apply() }
+    /** Home personalization: when on, the matching rail is omitted from the Home screen. PER content-profile
+     *  (each profile keeps its own choice), via the ContentProfiles namespace suffix; the default profile
+     *  uses the bare legacy key so existing settings carry over. */
+    private fun pKey(ctx: Context, base: String) = base + ContentProfiles.scopeSuffix(ctx)
+    fun hideRecentlyAdded(ctx: Context): Boolean = prefs(ctx).getBoolean(pKey(ctx, "hideRecentlyAdded"), false)
+    fun setHideRecentlyAdded(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean(pKey(ctx, "hideRecentlyAdded"), v).apply() }
+    fun hideForYou(ctx: Context): Boolean = prefs(ctx).getBoolean(pKey(ctx, "hideForYou"), false)
+    fun setHideForYou(ctx: Context, v: Boolean) { prefs(ctx).edit().putBoolean(pKey(ctx, "hideForYou"), v).apply() }
 
     /** A handful of recent poster URLs, used to paint the loading splash montage (Strimix-style). */
     fun splashPosters(ctx: Context): List<String> =

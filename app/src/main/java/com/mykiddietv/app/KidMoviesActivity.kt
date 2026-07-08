@@ -138,9 +138,10 @@ class KidMoviesActivity : AppCompatActivity() {
         io.execute {
             val cats = Portal.vodCategories()
             runOnUiThread {
-                b.status.visibility = if (cats.isEmpty()) View.VISIBLE else View.GONE
-                if (cats.isEmpty()) b.status.text = "Nothing to show right now."
-                adapter.submit(cats.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title) { showAutoCategory(c) } })
+                val visible = cats.filter { ContentProfiles.vodCatVisible(this, it.id) } // honor content-profile guardrails
+                b.status.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
+                if (visible.isEmpty()) b.status.text = "Nothing to show right now."
+                adapter.submit(visible.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title) { showAutoCategory(c) } })
                 b.list.scrollToPosition(0)
             }
         }

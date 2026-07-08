@@ -429,15 +429,18 @@ class KidContentActivity : AppCompatActivity() {
     }
 
     private fun showLive() {
+        // Respect the active content profile's guardrails: only its allowed categories are pickable here.
+        val visibleChannels = allChannels.filter { ContentProfiles.liveCatVisible(this, it.genreId) }
         val nodes = ArrayList<KidNode>()
-        nodes.add(KidNode("All Channels  (${allChannels.size})", null, "All Channels",
-            open = { showChannels(allChannels, "All Channels") }))
+        nodes.add(KidNode("All Channels  (${visibleChannels.size})", null, "All Channels",
+            open = { showChannels(visibleChannels, "All Channels") }))
         for (g in genres) {
+            if (!ContentProfiles.liveCatVisible(this, g.id)) continue
             val list = byGenre[g.id] ?: emptyList()
             if (list.isNotEmpty()) nodes.add(KidNode("${g.title}  (${list.size})", null, g.title,
                 open = { showChannels(list, g.title) }))
         }
-        push(Page("Live TV", nodes, Kind.CHANNELS, scopeChannels = allChannels))
+        push(Page("Live TV", nodes, Kind.CHANNELS, scopeChannels = visibleChannels))
     }
 
     private fun showChannels(list: List<Portal.Channel>, title: String) {
@@ -451,7 +454,8 @@ class KidContentActivity : AppCompatActivity() {
             runOnUiThread {
                 b.status.text = ""
                 if (cats.isEmpty()) { b.status.text = "No movie categories found."; return@runOnUiThread }
-                push(Page("Movies", cats.map { c ->
+                val visible = cats.filter { ContentProfiles.vodCatVisible(this, it.id) } // profile guardrails
+                push(Page("Movies", visible.map { c ->
                     KidNode(c.title, null, c.title, open = { showVodList(c) })
                 }, Kind.VOD_ALL))
             }
