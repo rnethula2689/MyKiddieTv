@@ -56,7 +56,7 @@ class ProfileActivity : AppCompatActivity() {
 
     private fun tileFrame(): LinearLayout {
         val t = LinearLayout(this)
-        val lp = LinearLayout.LayoutParams(dp(180), dp(200)); lp.marginEnd = dp(20)
+        val lp = LinearLayout.LayoutParams(dp(170), dp(168)); lp.marginEnd = dp(18)
         t.layoutParams = lp
         t.orientation = LinearLayout.VERTICAL
         t.gravity = Gravity.CENTER
@@ -81,7 +81,7 @@ class ProfileActivity : AppCompatActivity() {
     /** A fixed 110dp square icon TextView (emoji / initial). */
     private fun iconView(size: Float): TextView {
         val tv = TextView(this)
-        tv.layoutParams = LinearLayout.LayoutParams(dp(110), dp(110))
+        tv.layoutParams = LinearLayout.LayoutParams(dp(92), dp(92))
         tv.gravity = Gravity.CENTER
         tv.textSize = size
         tv.setTextColor(0xFFFFFFFF.toInt())
