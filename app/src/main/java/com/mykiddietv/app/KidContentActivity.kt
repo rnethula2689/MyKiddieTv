@@ -512,7 +512,14 @@ class KidContentActivity : AppCompatActivity() {
         if (v.isSeries)
             KidNode("📁  ${v.name}", v.posterUrl, v.name, open = { showSeasons(v) })
         else
-            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id))
+            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v,
+                alreadyAdded = savedVodIds.contains(v.id), rating = ratingBadge(v.name, v.year))
+
+    /** Cached cert badge for a movie: the cert, "NR" if looked-up-but-none, "" if not yet resolved. */
+    private fun ratingBadge(name: String, year: String): String {
+        val c = KidRating.cachedCert(this, name, year) ?: return ""
+        return if (c.isBlank()) "NR" else c
+    }
 
     private fun showSeasons(series: Portal.VodItem) {
         b.status.text = "Loading ${series.name}…"

@@ -31,4 +31,14 @@ object KidRating {
     /** Whether [title] should be shown to a kid in [band], honoring [hideUnrated]. */
     fun show(ctx: Context, title: String, year: String, band: Int, hideUnrated: Boolean): Boolean =
         AgeBands.allows(cert(ctx, title, year).ifBlank { null }, band, hideUnrated)
+
+    /**
+     * Certification already resolved for this title, without any network call:
+     *  null = never looked up, "" = looked up but none found, else the cert (e.g. "PG-13").
+     * Safe to call on the main thread. Used to badge rows the filter has already resolved.
+     */
+    fun cachedCert(ctx: Context, title: String, year: String): String? {
+        val p = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        return p.getString(key(title, year), null)?.let { if (it == NONE) "" else it }
+    }
 }
