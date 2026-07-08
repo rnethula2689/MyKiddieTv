@@ -102,6 +102,7 @@ class KidContentActivity : AppCompatActivity() {
             val err = Portal.connect()
             val ch = if (err == null) Portal.liveChannels() else emptyList()
             val g = if (err == null) Portal.liveGenres() else emptyList()
+            if (err == null) VodIndex.ensure(applicationContext, acct.sig()) // reuse the shared title index for instant, full search
             runOnUiThread {
                 if (err != null) { b.status.text = err; return@runOnUiThread }
                 allChannels = ch
@@ -458,6 +459,7 @@ class KidContentActivity : AppCompatActivity() {
         b.status.text = "Loading ${cat.title}…"
         io.execute {
             val (items, pages) = Portal.vodList(cat.id, 1)
+            VodIndex.add(applicationContext, Configs.active(applicationContext)?.sig() ?: "", items, cat.id)
             val filtered = filterForPick(items)
             runOnUiThread {
                 b.status.text = if (items.isNotEmpty() && filtered.isEmpty()) filteredEmptyHint() else ""
@@ -474,6 +476,7 @@ class KidContentActivity : AppCompatActivity() {
                 b.status.text = "Loading…"
                 io.execute {
                     val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                    VodIndex.add(applicationContext, Configs.active(applicationContext)?.sig() ?: "", more, cat.id)
                     val moreFiltered = filterForPick(more)
                     runOnUiThread {
                         b.status.text = ""
@@ -573,6 +576,8 @@ class KidContentActivity : AppCompatActivity() {
         }
     }
 
+    // Search parity with the parent home: instant local index → cache → every portal page (progressive),
+    // then the kid age-filter on top. This is why it searches the WHOLE folder, not just the first page.
     private fun globalSearch(query: String, page: Page) {
         pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
         if (query.isEmpty()) { b.status.text = ""; submit(page.nodes); return }
@@ -582,17 +587,27 @@ class KidContentActivity : AppCompatActivity() {
         if (query.length < 2) return
         b.status.text = "Searching movies & shows…"
         val seq = searchSeq
+        val scope = "kg"
+        fun show(vod: List<Portal.VodItem>) {
+            if (seq != searchSeq) return
+            b.status.text = ""
+            submit(chNodes + vod.map { vodNode(it) })
+        }
         val task = Runnable {
             io.execute {
-                val vod = filterForPick(Portal.vodSearch(query))
-                runOnUiThread {
-                    if (seq != searchSeq) return@runOnUiThread
-                    b.status.text = ""
-                    submit(chNodes + vod.map { vodNode(it) })
+                val idxRaw = if (VodIndex.ready) VodIndex.search(query) else emptyList()
+                if (idxRaw.isNotEmpty()) { val f = filterForPick(idxRaw); runOnUiThread { show(f) } }
+                if (VodIndex.complete) return@execute
+                SearchCache.get(scope, query)?.let { c -> val f = filterForPick(c); runOnUiThread { show(f) }; return@execute }
+                val raw = Portal.vodSearch(query) { partial ->
+                    val f = filterForPick((idxRaw + partial).distinctBy { it.id }); runOnUiThread { show(f) }
                 }
+                val merged = (idxRaw + raw).distinctBy { it.id }
+                SearchCache.put(scope, query, merged)
+                val f = filterForPick(merged); runOnUiThread { show(f) }
             }
         }
-        pendingSearch = task; ui.postDelayed(task, 450)
+        pendingSearch = task; ui.postDelayed(task, 300)
     }
 
     private fun vodSearch(query: String, catId: String?, page: Page) {
@@ -601,18 +616,29 @@ class KidContentActivity : AppCompatActivity() {
         if (query.length < 2) return
         b.status.text = "Searching…"
         val seq = searchSeq
+        val scope = if (catId == null) "kva" else "kc:$catId"
+        fun show(vod: List<Portal.VodItem>, done: Boolean) {
+            if (seq != searchSeq) return
+            val nodes = vod.map { vodNode(it) }
+            b.status.text = if (done && nodes.isEmpty()) "No results for “$query”." else ""
+            submit(nodes)
+        }
         val task = Runnable {
             io.execute {
-                val vod = filterForPick(if (catId == null) Portal.vodSearch(query) else Portal.vodSearchInCategory(catId, query))
-                runOnUiThread {
-                    if (seq != searchSeq) return@runOnUiThread
-                    val nodes = vod.map { vodNode(it) }
-                    b.status.text = if (nodes.isEmpty()) "No results for “$query”." else ""
-                    submit(nodes)
-                }
+                val idxRaw = if (VodIndex.ready) VodIndex.search(query, catId) else emptyList()
+                if (idxRaw.isNotEmpty()) { val f = filterForPick(idxRaw); runOnUiThread { show(f, VodIndex.complete) } }
+                if (VodIndex.complete) { if (idxRaw.isEmpty()) runOnUiThread { show(emptyList(), true) }; return@execute }
+                SearchCache.get(scope, query)?.let { c -> val f = filterForPick(c); runOnUiThread { show(f, true) }; return@execute }
+                val raw = if (catId == null)
+                    Portal.vodSearch(query) { partial -> val f = filterForPick((idxRaw + partial).distinctBy { it.id }); runOnUiThread { show(f, false) } }
+                else
+                    Portal.vodSearchInCategory(catId, query) { partial -> val f = filterForPick((idxRaw + partial).distinctBy { it.id }); runOnUiThread { show(f, false) } }
+                val merged = (idxRaw + raw).distinctBy { it.id }
+                SearchCache.put(scope, query, merged)
+                val f = filterForPick(merged); runOnUiThread { show(f, true) }
             }
         }
-        pendingSearch = task; ui.postDelayed(task, 450)
+        pendingSearch = task; ui.postDelayed(task, 300)
     }
 
     // ---- A-Z ----
