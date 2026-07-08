@@ -1086,7 +1086,8 @@ class ChannelsActivity : AppCompatActivity() {
         val rows = ArrayList<Row>()
 
         // Content rails (thumbnails) from local data — no portal calls, so the home is instant.
-        val cw = Resume.all(this)
+        // Restricted (adult/censored) items are kept off the home rail so they can't be replayed without the PIN.
+        val cw = Resume.all(this).filterNot { it.restricted }
         if (cw.isNotEmpty()) rows.add(Row("Continue Watching", null, rail = cw.map { e ->
             val pct = if (e.duration > 0) (e.position * 100 / e.duration).toInt() else -1
             Card(e.title, e.poster.ifBlank { null }, pct, landscape = true, onLongClick = { cwCardMenu(e) }) { continueClick(e) }
@@ -1329,7 +1330,7 @@ class ChannelsActivity : AppCompatActivity() {
     }
 
     private fun showContinueWatching() {
-        val all = Resume.all(this)
+        val all = Resume.all(this).filterNot { it.restricted } // hide adult/censored items (no PIN bypass)
         val live = all.filter { it.kind == "live" }
         val vod = all.filter { it.kind != "live" }
         val rows = ArrayList<Row>()

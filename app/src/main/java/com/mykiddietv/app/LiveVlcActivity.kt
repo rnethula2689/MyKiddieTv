@@ -404,7 +404,8 @@ class LiveVlcActivity : AppCompatActivity() {
     /** Remember the current channel for Continue Watching (single rolling "last live" entry). */
     private fun saveLastChannel() {
         val ch = channels.getOrNull(chIndex) ?: return
-        Resume.save(applicationContext, Resume.LIVE_ID, "live", ch.name, ch.logoUrl, "live|${ch.id}|${ch.cmd}", 0, 0)
+        // Tag adult/censored channels so they never surface on the home Continue Watching rail (PIN bypass).
+        Resume.save(applicationContext, Resume.LIVE_ID, "live", ch.name, ch.logoUrl, "live|${ch.id}|${ch.cmd}", 0, 0, restricted = ch.censored)
     }
 
     /** Create a fresh MediaPlayer bound to the video surface + event listener. */

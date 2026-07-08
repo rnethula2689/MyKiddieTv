@@ -340,17 +340,14 @@ class KidContentActivity : AppCompatActivity() {
         val rbPick = android.widget.RadioButton(this).apply { text = "I'll hand-pick titles"; id = 1; setTextColor(0xFFE6EDF3.toInt()) }
         val rbAuto = android.widget.RadioButton(this).apply { text = "Show everything within their age cap (no picking)"; id = 2; setTextColor(0xFFE6EDF3.toInt()) }
         rg.addView(rbPick); rg.addView(rbAuto); rg.check(if (k.filterMode == "auto") 2 else 1); col.addView(rg)
-        val cbFilter = android.widget.CheckBox(this).apply { text = "While I pick, hide titles above the cap"; isChecked = k.filterPickList; setTextColor(0xFFE6EDF3.toInt()) }
+        col.addView(tv("\nTitles above ${k.name}'s age cap (${band.rating}) are always hidden here.", 12f, 0xFF8B97A5.toInt()))
         val cbHide = android.widget.CheckBox(this).apply { text = "Hide titles with no age rating"; isChecked = k.hideUnrated; setTextColor(0xFFE6EDF3.toInt()) }
-        col.addView(cbFilter); col.addView(cbHide)
-        fun sync() { cbFilter.isEnabled = rg.checkedRadioButtonId != 2 }
-        rg.setOnCheckedChangeListener { _, _ -> sync() }; sync()
+        col.addView(cbHide)
         AlertDialog.Builder(this)
             .setTitle("Content settings")
             .setView(col)
             .setPositiveButton("Save") { _, _ ->
                 k.filterMode = if (rg.checkedRadioButtonId == 2) "auto" else "pick"
-                k.filterPickList = cbFilter.isChecked
                 k.hideUnrated = cbHide.isChecked
                 Profiles.saveKid(this, k)
                 b.status.text = "Saved settings for ${k.name} ✓"
@@ -359,12 +356,20 @@ class KidContentActivity : AppCompatActivity() {
             .show()
     }
 
-    /** In hand-pick mode with "filter my list" on, drop titles above the kid's age cap. Runs on io (network, cached). */
+    /**
+     * Drop titles above the kid's age cap from the parent's browse/pick list. The cap is ALWAYS
+     * enforced (a parent should never be offered R/horror for a preschooler); [hideUnrated] decides
+     * whether titles with no resolvable certification are also hidden. Runs on io (network, cached).
+     */
     private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> {
         val k = Profiles.activeKid(this) ?: return items
-        if (k.filterMode != "pick" || !k.filterPickList) return items
         return items.filter { KidRating.show(this, it.name, it.year, k.ageBand, k.hideUnrated) }
     }
+
+    /** Status hint when a whole folder gets filtered away, so an empty list doesn't look broken. */
+    private fun filteredEmptyHint(): String =
+        "Everything here is above ${Profiles.kidName(this)}'s age setting or has no age rating. " +
+            "Tap 🎛️ → “Hide titles with no age rating” to allow unrated titles."
 
     // ---- Approved Content (review & remove already-whitelisted items) ----
     private fun showApproved() {
@@ -471,7 +476,7 @@ class KidContentActivity : AppCompatActivity() {
             val (items, pages) = Portal.vodList(cat.id, 1)
             val filtered = filterForPick(items)
             runOnUiThread {
-                b.status.text = ""
+                b.status.text = if (items.isNotEmpty() && filtered.isEmpty()) filteredEmptyHint() else ""
                 push(Page(cat.title, vodNodes(cat, ArrayList(filtered), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
             }
         }
