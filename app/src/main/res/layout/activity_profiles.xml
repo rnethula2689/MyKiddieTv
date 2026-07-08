@@ -48,21 +48,14 @@
             android:layout_marginBottom="2dp"
             android:background="#33ffffff" />
 
-        <!-- The kids branch (+ Add kid). Scrolls horizontally when there are many, so it never gets cut off. -->
-        <HorizontalScrollView
-            android:layout_width="match_parent"
+        <!-- The kids branch (+ Add kid) flows into rows sized to fit the current width, so tiles
+             (especially "Add kid") wrap onto the next visible row instead of hiding off-screen.
+             The outer ScrollView handles overflow when there are many kids. -->
+        <LinearLayout
+            android:id="@+id/tileGrid"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fillViewport="true"
-            android:scrollbars="none">
-
-            <LinearLayout
-                android:id="@+id/tileRow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="horizontal"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
-        </HorizontalScrollView>
+            android:gravity="center"
+            android:orientation="vertical" />
     </LinearLayout>
 </ScrollView>

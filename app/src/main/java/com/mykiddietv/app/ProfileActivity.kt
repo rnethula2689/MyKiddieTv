@@ -42,13 +42,41 @@ class ProfileActivity : AppCompatActivity() {
 
     private fun buildTiles() {
         b.parentRow.removeAllViews()
-        b.tileRow.removeAllViews()
+        b.tileGrid.removeAllViews()
         val kids = Profiles.kids(this)
-        // Tree: Parent on top, kids (+ Add kid) branch below — so portrait never cuts the row off.
+        // Tree: Parent on top, kids (+ Add kid) branch below.
         b.parentRow.addView(parentTile())
-        kids.forEachIndexed { i, k -> b.tileRow.addView(kidTile(k, palette[i % palette.size])) }
-        b.tileRow.addView(addKidTile())
-        (b.tileRow.getChildAt(0) ?: b.parentRow.getChildAt(0))?.requestFocus()
+
+        // Build every kid tile plus the Add-kid tile, then flow them into rows that fit the
+        // current width. In portrait they wrap onto the next (visible) row so "Add kid" and any
+        // extra kids are never hidden off-screen; in landscape they all sit on one row.
+        val tiles = ArrayList<View>()
+        kids.forEachIndexed { i, k -> tiles.add(kidTile(k, palette[i % palette.size])) }
+        tiles.add(addKidTile())
+
+        val cols = columnsThatFit()
+        var row: LinearLayout? = null
+        tiles.forEachIndexed { i, t ->
+            if (i % cols == 0) { row = newTileRow(); b.tileGrid.addView(row) }
+            row!!.addView(t)
+        }
+        ((b.tileGrid.getChildAt(0) as? LinearLayout)?.getChildAt(0)
+            ?: b.parentRow.getChildAt(0))?.requestFocus()
+    }
+
+    /** How many tiles fit side-by-side at the current width (tile 170dp + 18dp gap). */
+    private fun columnsThatFit(): Int =
+        (resources.configuration.screenWidthDp / 188).coerceIn(2, 6)
+
+    private fun newTileRow(): LinearLayout {
+        val r = LinearLayout(this)
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = dp(10)
+        r.layoutParams = lp
+        r.orientation = LinearLayout.HORIZONTAL
+        r.gravity = Gravity.CENTER
+        return r
     }
 
     // ---- tiles ----
