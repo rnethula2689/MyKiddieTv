@@ -151,7 +151,8 @@ class ProfileActivity : AppCompatActivity() {
             .setTitle("Parent passcode")
             .setView(android.widget.FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) })
             .setPositiveButton("OK") { _, _ ->
-                if (input.text.toString() == Profiles.passcode(this)) block() else toast("Wrong passcode.")
+                if (Profiles.verifyPasscode(this, input.text.toString())) block()
+                else { val s = Profiles.passcodeLockSecs(this); toast(if (s > 0) "Too many attempts — wait ${s}s." else "Wrong passcode.") }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -174,8 +175,11 @@ class ProfileActivity : AppCompatActivity() {
             .setTitle("Enter parent passcode")
             .setView(android.widget.FrameLayout(this).apply { setPadding(pad, pad / 2, pad, 0); addView(input) })
             .setPositiveButton("Unlock") { _, _ ->
-                if (input.text.toString() == Profiles.passcode(this)) enterParent()
-                else Toast.makeText(this, "Wrong passcode.", Toast.LENGTH_SHORT).show()
+                if (Profiles.verifyPasscode(this, input.text.toString())) enterParent()
+                else {
+                    val s = Profiles.passcodeLockSecs(this)
+                    Toast.makeText(this, if (s > 0) "Too many attempts — wait ${s}s." else "Wrong passcode.", Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()

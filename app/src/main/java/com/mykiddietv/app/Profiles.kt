@@ -191,10 +191,25 @@ object Profiles {
         if (k != null && kid.isNotBlank()) { k.name = kid.trim(); saveActive(ctx, k) }
     }
 
-    /** 4-digit parent passcode; empty string means "not set yet" (parent entry is open). */
-    fun passcode(ctx: Context): String = prefs(ctx).getString("passcode", "") ?: ""
-    fun hasPasscode(ctx: Context): Boolean = passcode(ctx).length == 4
-    fun setPasscode(ctx: Context, code: String) { prefs(ctx).edit().putString("passcode", code.trim()).apply() }
+    /** Stored parent passcode (a salted hash, or legacy plaintext for pre-hash installs). Empty = not set. */
+    private fun passcodeStored(ctx: Context): String = prefs(ctx).getString("passcode", "") ?: ""
+    fun hasPasscode(ctx: Context): Boolean = passcodeStored(ctx).isNotEmpty()
+    fun setPasscode(ctx: Context, code: String) {
+        val t = code.trim()
+        prefs(ctx).edit().putString("passcode", if (t.isEmpty()) "" else Secret.hash(t)).apply()
+    }
+    /** True when [entered] matches the parent passcode. Rate-limited (lockout after repeated failures) and
+     *  migrates a legacy plaintext code to a salted hash on the first correct entry. */
+    fun verifyPasscode(ctx: Context, entered: String): Boolean {
+        if (Secret.lockedMs(ctx, "kidpass") > 0L) return false
+        val stored = passcodeStored(ctx)
+        val ok = Secret.verify(entered.trim(), stored)
+        if (ok) { Secret.recordSuccess(ctx, "kidpass"); if (!Secret.isHashed(stored)) setPasscode(ctx, entered.trim()) }
+        else Secret.recordFail(ctx, "kidpass")
+        return ok
+    }
+    /** Seconds the passcode entry is locked for after too many wrong tries (0 = not locked). */
+    fun passcodeLockSecs(ctx: Context): Long = (Secret.lockedMs(ctx, "kidpass") + 999) / 1000
 
     // ==== legacy single-kid accessors — operate on the ACTIVE kid ====
 

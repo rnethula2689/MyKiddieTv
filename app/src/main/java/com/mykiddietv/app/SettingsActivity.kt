@@ -137,7 +137,8 @@ class SettingsActivity : AppCompatActivity() {
         val parent = EditText(this).apply { setText(Profiles.parentName(this@SettingsActivity)); hint = "Parent name"; setSingleLine() }
         val kid = EditText(this).apply { setText(Profiles.kidName(this@SettingsActivity)); hint = "Kid name"; setSingleLine() }
         val pin = EditText(this).apply {
-            setText(Profiles.passcode(this@SettingsActivity)); hint = "4-digit passcode (blank = none)"
+            // Never pre-fill with the stored code (it's a hash now, and showing a passcode is a leak).
+            hint = if (Profiles.hasPasscode(this@SettingsActivity)) "New passcode (blank = keep current)" else "Set 4-digit passcode (blank = none)"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
             filters = arrayOf<android.text.InputFilter>(android.text.InputFilter.LengthFilter(4))
         }
@@ -148,12 +149,19 @@ class SettingsActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Profile names & passcode")
             .setView(box)
+            .setNeutralButton("Remove passcode") { _, _ ->
+                Profiles.setNames(this, parent.text.toString(), kid.text.toString())
+                Profiles.setPasscode(this, ""); toast("Passcode removed")
+            }
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
                 Profiles.setNames(this, parent.text.toString(), kid.text.toString())
                 val code = pin.text.toString().trim()
-                if (code.isEmpty() || code.length == 4) { Profiles.setPasscode(this, code); toast("Saved ✓") }
-                else toast("Passcode must be 4 digits (or blank).")
+                when {
+                    code.isEmpty() -> toast("Saved ✓")  // blank = keep the current passcode (no accidental wipe)
+                    code.length == 4 && code.all { it.isDigit() } -> { Profiles.setPasscode(this, code); toast("Saved ✓") }
+                    else -> toast("Passcode must be 4 digits (or blank to keep).")
+                }
             }
             .show()
     }
@@ -195,8 +203,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun showParentalPinDialog() {
-        val saved = Configs.parentalPin(this)
-        if (saved.isBlank()) { promptNewPin("Set a parental PIN"); return }
+        if (!Configs.hasParentalPin(this)) { promptNewPin("Set a parental PIN"); return }
         val cur = pinInput("Current PIN")
         AlertDialog.Builder(this)
             .setTitle("Parental PIN")
@@ -204,8 +211,8 @@ class SettingsActivity : AppCompatActivity() {
             .setView(padded(cur))
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Change PIN") { _, _ ->
-                if (cur.text.toString().trim() != saved) toast("Incorrect PIN.")
-                else promptNewPin("New parental PIN")
+                if (Configs.verifyParentalPin(this, cur.text.toString().trim())) promptNewPin("New parental PIN")
+                else { val s = Configs.parentalPinLockSecs(this); toast(if (s > 0) "Too many attempts — wait ${s}s." else "Incorrect PIN.") }
             }
             .show()
     }

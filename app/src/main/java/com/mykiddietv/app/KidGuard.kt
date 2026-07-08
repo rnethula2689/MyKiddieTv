@@ -49,8 +49,11 @@ object KidGuard {
             .setTitle(title)
             .setView(FrameLayout(activity).apply { setPadding(pad, pad / 2, pad, 0); addView(input) })
             .setPositiveButton("OK") { _, _ ->
-                if (input.text.toString() == Profiles.passcode(activity)) onOk()
-                else Toast.makeText(activity, "Wrong passcode.", Toast.LENGTH_SHORT).show()
+                if (Profiles.verifyPasscode(activity, input.text.toString())) onOk()
+                else {
+                    val s = Profiles.passcodeLockSecs(activity)
+                    Toast.makeText(activity, if (s > 0) "Too many attempts — wait ${s}s." else "Wrong passcode.", Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
