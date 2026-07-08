@@ -24,7 +24,6 @@ object KidRating {
         if (c.isNullOrBlank() && BuildConfig.OMDB_KEY.isNotBlank())
             c = try { Omdb.rated(BuildConfig.OMDB_KEY, title, year) } catch (_: Exception) { null }
         val v = c?.takeIf { it.isNotBlank() && it != "N/A" } ?: ""
-        android.util.Log.i("KIDCERT", "cert '${Tmdb.cleanTitle(title)}' y=$year -> '${v.ifBlank { "(none)" }}' tmdbKey=${BuildConfig.TMDB_KEY.isNotBlank()} omdbKey=${BuildConfig.OMDB_KEY.isNotBlank()}")
         p.edit().putString(k, if (v.isBlank()) NONE else v).apply()
         return v
     }
