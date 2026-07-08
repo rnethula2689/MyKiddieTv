@@ -1272,14 +1272,13 @@ class LiveVlcActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
-    private var kidHistoryLogged = false
     private var resumedOnce = false
     override fun onResume() {
         super.onResume()
         if (kidMode) {
             KidLimits.onResume(this)
             if (isFinishing) return // KidLimits may have sent us to the lock screen
-            if (!kidHistoryLogged) { KidHistory.add(this, titleText); kidHistoryLogged = true }
+            KidHistory.start(this, titleText, if (isVod) "movie" else "live")
         }
         // onStop() stops playback to free the stream; rebuild + re-resolve when we return so the player
         // isn't left blank-with-audio (or hung on Loading with a dead token).
@@ -1289,7 +1288,7 @@ class LiveVlcActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        if (kidMode) KidLimits.onPause(this)
+        if (kidMode) { KidLimits.onPause(this); KidHistory.finish(this) }
     }
 
     override fun onStop() {

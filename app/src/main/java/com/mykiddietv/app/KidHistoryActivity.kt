@@ -32,6 +32,15 @@ class KidHistoryActivity : AppCompatActivity() {
         b.empty.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
         b.clearBtn.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
         val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
-        b.list.text = all.joinToString("\n") { "• ${it.title}\n    ${fmt.format(Date(it.ts))}" }
+        b.list.text = all.joinToString("\n\n") { h ->
+            val dur = when {
+                h.durationMs >= 60_000 -> "  ·  ${h.durationMs / 60_000}m watched"
+                h.durationMs > 0 -> "  ·  <1m"
+                else -> ""
+            }
+            val icon = if (h.kind == "live") "📺 Live" else "🎬"
+            val who = if (h.kidName.isNotBlank()) "${h.kidName}:  " else ""
+            "• $who$icon ${h.title}$dur\n    ${fmt.format(Date(h.ts))}"
+        }
     }
 }

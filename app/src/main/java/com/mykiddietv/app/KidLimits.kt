@@ -6,52 +6,62 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 
 /**
- * Parental screen-time controls for kid mode: an optional daily watch-time limit and an optional
- * bedtime window. Kid activities call [onResume]/[onPause] so foreground time accumulates across the
- * whole kid session (home, browsing, and playback). When the limit is hit or it's bedtime, [enforce]
- * sends the child to [KidLockActivity] (passcode required to leave). All local; resets each day.
+ * Parental screen-time controls for kid mode — PER KID: each kid profile has its own optional daily
+ * watch-time limit and bedtime window, and its own daily usage tally. Kid activities call
+ * [onResume]/[onPause] so foreground time accumulates for whoever is active; when that kid hits their
+ * limit or it's their bedtime, [enforce] sends them to [KidLockActivity]. All local; resets each day.
+ *
+ * Config keys are suffixed with the kid id ("limitMin:<id>", …). Reads fall back to the legacy GLOBAL
+ * key so a pre-per-kid install's single limit keeps applying to every kid until it's set individually.
  */
 object KidLimits {
     private const val PREF = "kids"
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+    /** The kid currently watching (enforcement + usage are scoped to them). */
+    private fun active(ctx: Context) = Profiles.activeKidId(ctx) ?: "default"
 
-    // ---- config ----
-    fun dailyLimitMin(ctx: Context): Int = prefs(ctx).getInt("limitMin", 0) // 0 = off
-    fun setDailyLimitMin(ctx: Context, m: Int) { prefs(ctx).edit().putInt("limitMin", m.coerceAtLeast(0)).apply() }
-
-    /** Bedtime as minutes-of-day; both -1 = off. May wrap past midnight (start > end). */
-    fun bedStartMin(ctx: Context): Int = prefs(ctx).getInt("bedStart", -1)
-    fun bedEndMin(ctx: Context): Int = prefs(ctx).getInt("bedEnd", -1)
-    fun setBedtime(ctx: Context, startMin: Int, endMin: Int) {
-        prefs(ctx).edit().putInt("bedStart", startMin).putInt("bedEnd", endMin).apply()
+    // ---- config (per kid; legacy-global fallback on read) ----
+    fun dailyLimitMin(ctx: Context, kid: String = active(ctx)): Int =
+        prefs(ctx).getInt("limitMin:$kid", prefs(ctx).getInt("limitMin", 0)) // 0 = off
+    fun setDailyLimitMin(ctx: Context, kid: String, m: Int) {
+        prefs(ctx).edit().putInt("limitMin:$kid", m.coerceAtLeast(0)).apply()
     }
-    fun bedtimeOn(ctx: Context) = bedStartMin(ctx) >= 0 && bedEndMin(ctx) >= 0 && bedStartMin(ctx) != bedEndMin(ctx)
 
-    // ---- usage (resets daily) ----
+    fun bedStartMin(ctx: Context, kid: String = active(ctx)): Int =
+        prefs(ctx).getInt("bedStart:$kid", prefs(ctx).getInt("bedStart", -1))
+    fun bedEndMin(ctx: Context, kid: String = active(ctx)): Int =
+        prefs(ctx).getInt("bedEnd:$kid", prefs(ctx).getInt("bedEnd", -1))
+    fun setBedtime(ctx: Context, kid: String, startMin: Int, endMin: Int) {
+        prefs(ctx).edit().putInt("bedStart:$kid", startMin).putInt("bedEnd:$kid", endMin).apply()
+    }
+    fun bedtimeOn(ctx: Context, kid: String = active(ctx)) =
+        bedStartMin(ctx, kid) >= 0 && bedEndMin(ctx, kid) >= 0 && bedStartMin(ctx, kid) != bedEndMin(ctx, kid)
+
+    // ---- usage (per kid, resets daily) ----
     private fun today() = SimpleDateFormat("yyyyMMdd", Locale.US).format(java.util.Date())
-    fun usedMin(ctx: Context): Int {
+    fun usedMin(ctx: Context, kid: String = active(ctx)): Int {
         val p = prefs(ctx)
-        if (p.getString("usedDate", "") != today()) return 0
-        return (p.getLong("usedMs", 0L) / 60000L).toInt()
+        if (p.getString("usedDate:$kid", "") != today()) return 0
+        return (p.getLong("usedMs:$kid", 0L) / 60000L).toInt()
     }
     private fun addUsedMs(ctx: Context, ms: Long) {
         if (ms <= 0) return
+        val kid = active(ctx)
         val p = prefs(ctx)
-        val base = if (p.getString("usedDate", "") == today()) p.getLong("usedMs", 0L) else 0L
-        p.edit().putString("usedDate", today()).putLong("usedMs", base + ms).apply()
+        val base = if (p.getString("usedDate:$kid", "") == today()) p.getLong("usedMs:$kid", 0L) else 0L
+        p.edit().putString("usedDate:$kid", today()).putLong("usedMs:$kid", base + ms).apply()
     }
     fun remainingMin(ctx: Context): Int {
         val lim = dailyLimitMin(ctx); if (lim <= 0) return -1
         return (lim - usedMin(ctx)).coerceAtLeast(0)
     }
 
-    // ---- checks ----
+    // ---- checks (for the active kid) ----
     fun isBedtime(ctx: Context): Boolean {
         if (!bedtimeOn(ctx)) return false
         val c = Calendar.getInstance()

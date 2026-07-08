@@ -877,18 +877,17 @@ class PlayerActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
-    private var kidHistoryLogged = false
     override fun onResume() {
         super.onResume()
         if (kidMode) {
             KidLimits.onResume(this)
-            if (!isFinishing && !kidHistoryLogged) { KidHistory.add(this, titleText); kidHistoryLogged = true }
+            if (!isFinishing) KidHistory.start(this, titleText, if (isLive) "live" else "movie")
         }
     }
 
     override fun onPause() {
         super.onPause()
-        if (kidMode) KidLimits.onPause(this)
+        if (kidMode) { KidLimits.onPause(this); KidHistory.finish(this) }
     }
 
     override fun onStop() {

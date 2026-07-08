@@ -121,14 +121,36 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle("Kids")
             .setItems(arrayOf("⏱  Screen time & bedtime", "📜  Watch history", "👤  Profile names & passcode", "🧩  Manage kid content")) { _, w ->
                 when (w) {
-                    0 -> KidScreenTime.show(this)
-                    1 -> startActivity(Intent(this, KidHistoryActivity::class.java))
-                    2 -> showKidNamesDialog()
-                    3 -> startActivity(Intent(this, KidContentActivity::class.java))
+                    // Screen-time offers an extra "All kids" option; the rest manage one specific kid.
+                    0 -> withChosenKid(allowAll = true) { KidScreenTime.show(this, it?.id) }
+                    1 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidHistoryActivity::class.java)) }
+                    2 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); showKidNamesDialog() }
+                    3 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidContentActivity::class.java)) }
                 }
             }
             .setNegativeButton("Close", null)
             .show()
+    }
+
+    /** Ask which kid to manage (skips the prompt when there's only one). [allowAll]=true adds an "All kids"
+     *  choice that calls back with null. No kids → a hint toast. */
+    private fun withChosenKid(allowAll: Boolean = false, action: (Profiles.Kid?) -> Unit) {
+        val kids = Profiles.kids(this)
+        when {
+            kids.isEmpty() -> toast("Add a kid profile first (from the Who's-watching screen).")
+            kids.size == 1 && !allowAll -> action(kids[0])
+            else -> {
+                val labels = (if (allowAll) listOf("👥  All kids") else emptyList()) +
+                    kids.map { "${it.name}  ·  ${AgeBands.of(it.ageBand).name}" }
+                AlertDialog.Builder(this)
+                    .setTitle("Which kid?")
+                    .setItems(labels.toTypedArray()) { _, i ->
+                        if (allowAll && i == 0) action(null) else action(kids[i - if (allowAll) 1 else 0])
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
     }
 
     private fun showKidNamesDialog() {
