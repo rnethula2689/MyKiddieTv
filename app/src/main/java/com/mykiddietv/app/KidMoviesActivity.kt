@@ -21,15 +21,14 @@ class KidMoviesActivity : AppCompatActivity() {
     private var connected = false
     private var inStreaming = false        // in the "Live Movies & Shows" list (or deeper)
     private var inSeries: String? = null   // non-null = viewing a series' episodes
-    private var band = AgeBands.YOUNGER
     private var streamingRows: List<ChannelsActivity.Row> = emptyList()
-    // Auto mode (kid browses everything within their age cap): current category / series being viewed.
+    // Full-catalogue browse (manageContent = false): current category / series being viewed.
     private var autoCat: Portal.VodCat? = null
     private var autoSeries: Portal.VodItem? = null
     private var autoInEpisodes = false
 
-    private fun autoMode(): Boolean = Profiles.activeKid(this)?.filterMode == "auto"
-    private fun kidHideUnrated(): Boolean = Profiles.activeKid(this)?.hideUnrated ?: true
+    /** false = kid browses the whole catalogue; true = only the parent-approved whitelist. */
+    private fun manageContent(): Boolean = Profiles.activeManageContent(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,7 +36,6 @@ class KidMoviesActivity : AppCompatActivity() {
         setContentView(b.root)
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
-        band = Profiles.activeBand(this)
         b.search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) { applyStreamingFilter(s?.toString() ?: "") }
             override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
@@ -89,7 +87,7 @@ class KidMoviesActivity : AppCompatActivity() {
     /** Approved content streamed online (needs internet). */
     private fun showStreaming() {
         inStreaming = true; inSeries = null
-        if (autoMode()) { showAutoCategories(); return }
+        if (!manageContent()) { showAutoCategories(); return } // full catalogue (no whitelist)
         b.title.text = "Live Movies & Shows"
         val movies = Profiles.allowedVod(this).filter { !it.isSeries }
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
@@ -103,7 +101,7 @@ class KidMoviesActivity : AppCompatActivity() {
         }
         rows.sortBy { it.sortKey.lowercase() }
         streamingRows = rows
-        b.search.visibility = if (AgeBands.showsSearch(band) && rows.isNotEmpty()) View.VISIBLE else View.GONE
+        b.search.visibility = if (rows.isNotEmpty()) View.VISIBLE else View.GONE
         applyStreamingFilter(b.search.text?.toString() ?: "")
         b.list.scrollToPosition(0)
     }
@@ -123,7 +121,6 @@ class KidMoviesActivity : AppCompatActivity() {
 
     /** Preschool taps a movie and it just plays; older bands open a band-aware preview screen first. */
     private fun openMovie(v: Portal.VodItem) {
-        if (AgeBands.tapPlaysDirectly(band)) { playMovie(v); return }
         startActivity(Intent(this, KidDetailActivity::class.java)
             .putExtra("vodId", v.id).putExtra("cmd", v.cmd)
             .putExtra("title", v.name).putExtra("poster", v.posterUrl))
@@ -156,20 +153,16 @@ class KidMoviesActivity : AppCompatActivity() {
             val rows = autoRows(cat, ArrayList(items), 1, pages)
             runOnUiThread {
                 b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                if (rows.isEmpty()) b.status.text = "Nothing age-appropriate here yet."
+                if (rows.isEmpty()) b.status.text = "Nothing here yet."
                 adapter.submit(rows); b.list.scrollToPosition(0)
             }
         }
     }
 
-    /** Build rows for a category page, keeping only titles within the kid's cap. Runs on io (cert lookups, cached). */
+    /** Build rows for a category page (whole catalogue — this kid is not content-managed). */
     private fun autoRows(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<ChannelsActivity.Row> {
-        val hide = kidHideUnrated()
         val rows = ArrayList<ChannelsActivity.Row>()
         for (v in acc) {
-            // Pass the real release year so the cert lookup matches the RIGHT film (an R title must not
-            // get a same-name lower-rated film's certificate and slip past the age cap).
-            if (!KidRating.show(this, v.name, v.year, band, hide)) continue
             if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) })
             else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
         }
@@ -233,8 +226,6 @@ class KidMoviesActivity : AppCompatActivity() {
         })
         b.list.scrollToPosition(0)
     }
-
-    private fun playMovie(v: Portal.VodItem) = play(v.name) { Portal.playVodUrl(v.id, v.cmd) }
 
     private fun playEpisode(ep: Profiles.KidEpisode) =
         play("${ep.seriesName} — ${ep.name}") { Portal.playEpisodeUrl(ep.seriesId, ep.seasonId, ep.episodeId) }

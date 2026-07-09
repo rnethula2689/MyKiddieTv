@@ -16,6 +16,7 @@ class KidHomeActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private lateinit var b: ActivityKidhomeBinding
     private var connected = false
+    private var allChannels: List<Portal.Channel> = emptyList()   // full list, for a non-managed kid
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,20 +71,25 @@ class KidHomeActivity : AppCompatActivity() {
         Portal.sn = acct.sn
         io.execute {
             val err = Portal.connect()
+            val all = if (err == null && !Profiles.activeManageContent(this)) Portal.liveChannels() else emptyList()
             runOnUiThread {
                 connected = err == null
+                allChannels = all
+                val manage = Profiles.activeManageContent(this)
                 b.status.text = if (connected) {
-                    val n = Profiles.allowedChannels(this).size
-                    if (n == 0) "No channels yet. Ask a grown-up to add some." else "Ready! 🎉"
+                    val n = if (manage) Profiles.allowedChannels(this).size else all.size
+                    if (n == 0) (if (manage) "No channels yet. Ask a grown-up to add some." else "No channels available.")
+                    else "Ready! 🎉"
                 } else "Couldn't connect. Ask a grown-up to check Settings."
             }
         }
     }
 
     private fun openLive() {
-        val channels = Profiles.allowedChannels(this)
+        val manage = Profiles.activeManageContent(this)
+        val channels = if (manage) Profiles.allowedChannels(this) else allChannels
         if (channels.isEmpty()) {
-            Toast.makeText(this, "No channels yet — ask a grown-up.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (manage) "No channels yet — ask a grown-up." else "No channels available.", Toast.LENGTH_SHORT).show()
             return
         }
         if (!connected) {

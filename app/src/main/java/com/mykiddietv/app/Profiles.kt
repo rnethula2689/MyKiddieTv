@@ -28,10 +28,7 @@ object Profiles {
         val id: String,
         var name: String,
         var avatar: String = "",              // "" | "emoji:🦁" | "file:/path" (see Avatars)
-        var ageBand: Int = AgeBands.YOUNGER,  // 0..3 (see AgeBands)
-        var filterMode: String = "pick",      // "pick" (parent hand-picks) | "auto" (kid browses everything ≤ age cap)
-        var filterPickList: Boolean = false,  // pick mode only: filter the PARENT's browse list to the age cap
-        var hideUnrated: Boolean = true,      // hide titles with no age certification found (TMDB/OMDb)
+        var manageContent: Boolean = true,    // true = kid sees only the parent-approved whitelist; false = full catalogue (adult)
         val channels: MutableList<Portal.Channel> = ArrayList(),
         val vod: MutableList<Portal.VodItem> = ArrayList(),
         val episodes: MutableList<KidEpisode> = ArrayList(),
@@ -67,8 +64,7 @@ object Profiles {
         val dl = JSONArray(); k.downloads.forEach { dl.put(it) }
         return JSONObject()
             .put("id", k.id).put("name", k.name).put("avatar", k.avatar)
-            .put("ageBand", k.ageBand).put("filterMode", k.filterMode)
-            .put("filterPickList", k.filterPickList).put("hideUnrated", k.hideUnrated)
+            .put("manageContent", k.manageContent)
             .put("channels", ch).put("vod", vd).put("episodes", ep).put("downloads", dl)
     }
 
@@ -77,10 +73,9 @@ object Profiles {
             id = o.optString("id"),
             name = o.optString("name"),
             avatar = o.optString("avatar", ""),
-            ageBand = o.optInt("ageBand", AgeBands.YOUNGER),
-            filterMode = o.optString("filterMode", "pick"),
-            filterPickList = o.optBoolean("filterPickList", false),
-            hideUnrated = o.optBoolean("hideUnrated", true)
+            // Legacy profiles (pre-age-removal): anything that used to browse everything ("auto") maps to
+            // full access; everyone else defaults to managed (approved-only) — the safe default.
+            manageContent = o.optBoolean("manageContent", o.optString("filterMode", "pick") != "auto")
         )
         o.optJSONArray("channels")?.let { a ->
             for (i in 0 until a.length()) { val c = a.optJSONObject(i) ?: continue
@@ -148,8 +143,8 @@ object Profiles {
 
     fun newKidId(): String = "k" + System.currentTimeMillis().toString(36)
 
-    /** Convenience for the active kid's band; YOUNGER if there's no kid yet. */
-    fun activeBand(ctx: Context): Int = activeKid(ctx)?.ageBand ?: AgeBands.YOUNGER
+    /** Whether the active kid is limited to the parent-approved whitelist (true) or sees everything (false). */
+    fun activeManageContent(ctx: Context): Boolean = activeKid(ctx)?.manageContent ?: true
 
     /** Persist mutations made to the active kid object (its lists were changed in place). */
     private fun saveActive(ctx: Context, k: Kid) { saveKid(ctx, k) }
@@ -168,7 +163,7 @@ object Profiles {
             !p.getString("vod", "[]").isNullOrBlank() && p.getString("vod", "[]") != "[]" ||
             !p.getString("episodes", "[]").isNullOrBlank() && p.getString("episodes", "[]") != "[]"
         if (oldName.isBlank() && !hasOldContent) { return }   // fresh install → no kid yet
-        val k = Kid(id = newKidId(), name = oldName.ifBlank { "Kids" }, avatar = oldAvatar, ageBand = AgeBands.YOUNGER)
+        val k = Kid(id = newKidId(), name = oldName.ifBlank { "Kids" }, avatar = oldAvatar)
         // migrate content lists
         try { JSONArray(p.getString("channels", "[]")).let { a -> for (i in 0 until a.length()) { val c = a.optJSONObject(i) ?: continue
             k.channels.add(Portal.Channel(c.optString("id"), c.optString("name"), c.optString("number"), c.optString("cmd"), c.optString("logo"), c.optString("genreId"))) } } } catch (_: Exception) {}

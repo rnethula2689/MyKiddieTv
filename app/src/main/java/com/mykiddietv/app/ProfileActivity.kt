@@ -124,7 +124,7 @@ class ProfileActivity : AppCompatActivity() {
         if (k.avatar.startsWith("emoji:")) avatar.textSize = 56f
         t.addView(avatar)
         t.addView(label(k.name, 20f, 0xFFE6EDF3.toInt(), true, 8))
-        t.addView(label(AgeBands.of(k.ageBand).name, 13f, 0xFF8B97A5.toInt()))
+        t.addView(label(if (k.manageContent) "Approved content" else "Full access", 13f, 0xFF8B97A5.toInt()))
         t.setOnClickListener { Profiles.setActiveKid(this, k.id); startActivity(Intent(this, KidHomeActivity::class.java)) }
         t.setOnLongClickListener { ensureParent { manageKid(k) }; true }
         return t

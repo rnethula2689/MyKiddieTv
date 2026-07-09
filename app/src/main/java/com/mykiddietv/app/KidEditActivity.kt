@@ -14,20 +14,19 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Create or edit a kid profile: Name → Age band → Picture. The age band decides how much
- * functionality the kid's view exposes (see [AgeBands]). Built in code (no XML) since it's a
- * simple linear form. Pass "kidId" to edit an existing kid.
+ * Create or edit a kid profile: Name → Content management → Picture. "Manage content" decides whether
+ * the kid is limited to the parent-approved whitelist or can watch everything. Built in code (no XML)
+ * since it's a simple linear form. Pass "kidId" to edit an existing kid.
  */
 class KidEditActivity : AppCompatActivity() {
 
     private var editing: Profiles.Kid? = null
-    private var chosenBand = AgeBands.YOUNGER
+    private var manageContent = true   // default: approved-only (the safe choice)
     private var chosenAvatar = ""
     private var pendingCameraPath: String? = null
 
     private lateinit var nameField: EditText
     private lateinit var avatarPreview: TextView
-    private val bandRows = ArrayList<LinearLayout>()
 
     private val accent = 0xFF19C37D.toInt()
 
@@ -52,7 +51,7 @@ class KidEditActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         editing = Profiles.kid(this, intent.getStringExtra("kidId"))
-        editing?.let { chosenBand = it.ageBand; chosenAvatar = it.avatar }
+        editing?.let { manageContent = it.manageContent; chosenAvatar = it.avatar }
 
         val root = ScrollView(this).apply { setBackgroundColor(0xFF0B0F14.toInt()) }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(24), dp(24), dp(24)) }
@@ -69,13 +68,14 @@ class KidEditActivity : AppCompatActivity() {
         }
         col.addView(nameField)
 
-        // ---- age band ----
-        col.addView(sectionLabel("Age group"))
+        // ---- content management ----
+        col.addView(sectionLabel("Content"))
         col.addView(TextView(this).apply {
-            text = "Sets how much appears — the youngest just tap & watch; ratings, search and full info turn on as they grow."
+            text = "ON: this child only sees the shows & channels you approve in Manage Kid Content.\n" +
+                "OFF: this child can watch everything on the service — including restricted / adult content."
             setTextColor(0xFF8B97A5.toInt()); textSize = 12f; setPadding(0, 0, 0, dp(8))
         })
-        for (band in AgeBands.ALL) col.addView(bandRow(band))
+        col.addView(manageSwitch())
 
         // ---- picture ----
         col.addView(sectionLabel("Picture"))
@@ -99,7 +99,6 @@ class KidEditActivity : AppCompatActivity() {
             text = "Delete profile"; setTextColor(0xFFFF6B6B.toInt()); setOnClickListener { confirmDelete() }
         })
 
-        refreshBandHighlight()
         refreshAvatar()
     }
 
@@ -113,34 +112,27 @@ class KidEditActivity : AppCompatActivity() {
         setPadding(0, dp(20), 0, dp(6))
     }
 
-    private fun bandRow(band: AgeBands.Band): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            isFocusable = true; isClickable = true
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            val lp = LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(8); layoutParams = lp
+    /** The "Manage this kid's content" toggle. Turning it OFF shows an adult-content disclaimer. */
+    private fun manageSwitch(): android.widget.Switch {
+        val sw = android.widget.Switch(this).apply {
+            text = "  Manage this kid's content"
+            textSize = 16f; setTextColor(0xFFE6EDF3.toInt())
+            isChecked = manageContent
+            setPadding(dp(4), dp(10), dp(4), dp(10))
         }
-        row.addView(TextView(this).apply { text = band.emoji; textSize = 30f; setPadding(0, 0, dp(14), 0) })
-        row.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(TextView(this@KidEditActivity).apply { text = "${band.name}  ·  ages ${band.ages}"; textSize = 16f; setTextColor(0xFFE6EDF3.toInt()); setTypeface(typeface, android.graphics.Typeface.BOLD) })
-            addView(TextView(this@KidEditActivity).apply { text = "Rated ${band.rating}"; textSize = 12f; setTextColor(0xFF8B97A5.toInt()) })
-        })
-        row.tag = band.id
-        row.setOnClickListener { chosenBand = band.id; refreshBandHighlight() }
-        bandRows.add(row)
-        return row
-    }
-
-    private fun refreshBandHighlight() {
-        for (row in bandRows) {
-            val selected = (row.tag as Int) == chosenBand
-            val d = android.graphics.drawable.GradientDrawable()
-            d.cornerRadius = dp(10).toFloat()
-            d.setColor(if (selected) 0x2219C37D else 0x14FFFFFF)
-            if (selected) d.setStroke(dp(2), accent)
-            row.background = d
+        sw.setOnCheckedChangeListener { _, checked ->
+            if (checked) { manageContent = true; return@setOnCheckedChangeListener }
+            // Turning management OFF → confirm the parent understands the child gets full access.
+            AlertDialog.Builder(this)
+                .setTitle("Allow ALL content?")
+                .setMessage("With content management OFF, this child can watch EVERYTHING on the service — " +
+                    "including restricted, R-rated and adult content, with no filtering.\n\nAre you sure?")
+                .setPositiveButton("Yes, allow everything") { _, _ -> manageContent = false }
+                .setNegativeButton("Cancel") { _, _ -> sw.isChecked = true }
+                .setOnCancelListener { sw.isChecked = true }
+                .show()
         }
+        return sw
     }
 
     private fun emojiRow(): HorizontalScrollView {
@@ -184,8 +176,8 @@ class KidEditActivity : AppCompatActivity() {
     private fun save() {
         val name = nameField.text?.toString()?.trim().orEmpty()
         if (name.isBlank()) { toast("Please enter a name."); return }
-        val k = editing?.also { it.name = name; it.ageBand = chosenBand; it.avatar = chosenAvatar }
-            ?: Profiles.Kid(id = Profiles.newKidId(), name = name, avatar = chosenAvatar, ageBand = chosenBand)
+        val k = editing?.also { it.name = name; it.manageContent = manageContent; it.avatar = chosenAvatar }
+            ?: Profiles.Kid(id = Profiles.newKidId(), name = name, avatar = chosenAvatar, manageContent = manageContent)
         Profiles.saveKid(this, k)
         Profiles.setActiveKid(this, k.id)
         toast("Saved ✓")

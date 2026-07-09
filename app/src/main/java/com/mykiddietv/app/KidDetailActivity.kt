@@ -32,7 +32,6 @@ class KidDetailActivity : AppCompatActivity() {
     private lateinit var cmd: String
     private lateinit var title: String
     private var poster: String = ""
-    private var band = AgeBands.YOUNGER
     private var trailerKey: String? = null
 
     private lateinit var backdrop: ImageView
@@ -50,7 +49,6 @@ class KidDetailActivity : AppCompatActivity() {
         cmd = intent.getStringExtra("cmd") ?: ""
         title = intent.getStringExtra("title") ?: "Movie"
         poster = intent.getStringExtra("poster") ?: ""
-        band = Profiles.activeBand(this)
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF0B0F14.toInt()) }
 
@@ -91,7 +89,7 @@ class KidDetailActivity : AppCompatActivity() {
 
         overviewView = TextView(this).apply {
             textSize = 15f; setTextColor(0xFFC9D2DC.toInt()); gravity = Gravity.CENTER
-            maxLines = if (AgeBands.showsFullDescription(band)) 100 else 3
+            maxLines = 100
             ellipsize = android.text.TextUtils.TruncateAt.END
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) }
@@ -145,7 +143,7 @@ class KidDetailActivity : AppCompatActivity() {
         if (key.isBlank()) return
         io.execute {
             val d = Tmdb.details(key, title, "", false) ?: return@execute
-            val om = if (AgeBands.showsRatings(band) && BuildConfig.OMDB_KEY.isNotBlank())
+            val om = if (BuildConfig.OMDB_KEY.isNotBlank())
                 Omdb.ratings(BuildConfig.OMDB_KEY, title, "") else null
             trailerKey = d.trailers.firstOrNull()?.youtubeKey
             runOnUiThread {
@@ -153,11 +151,11 @@ class KidDetailActivity : AppCompatActivity() {
                 if (d.title.isNotBlank()) titleView.text = d.title
                 (d.backdropUrl ?: d.posterUrl)?.let { backdrop.load(it) }
                 if (poster.isBlank()) d.posterUrl?.let { posterView.load(it) }
-                if (AgeBands.showsDescription(band) && d.overview.isNotBlank()) {
+                if (d.overview.isNotBlank()) {
                     overviewView.text = d.overview; overviewView.visibility = View.VISIBLE
                 }
-                if (AgeBands.showsTrailers(band) && !trailerKey.isNullOrBlank()) trailerBtn.visibility = View.VISIBLE
-                if (AgeBands.showsRatings(band)) {
+                if (!trailerKey.isNullOrBlank()) trailerBtn.visibility = View.VISIBLE
+                run {
                     val parts = ArrayList<String>()
                     if (om?.imdb != null) parts.add("IMDb ${om.imdb}") else if (d.rating > 0) parts.add("★ %.1f".format(d.rating))
                     om?.rottenTomatoes?.let { parts.add("🍅 $it") }

@@ -72,9 +72,9 @@ class KidContentActivity : AppCompatActivity() {
 
         b.searchBtn.setOnClickListener { toggleSearch() }
         b.clearBtn.setOnClickListener { b.search.setText(""); b.search.requestFocus() }
-        // Show which kid this screen is managing, + a distinct content-settings gear (≠ the general gear).
+        // Show which kid this screen is managing. (Age/content-settings gear removed — no age system anymore.)
         b.kidNameLabel.text = Profiles.kidName(this)
-        b.contentGearBtn.setOnClickListener { contentSettingsDialog() }
+        b.contentGearBtn.visibility = android.view.View.GONE
         b.search.addTextChangedListener(object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString() ?: "")
             override fun beforeTextChanged(s: CharSequence?, a: Int, c: Int, d: Int) {}
@@ -323,38 +323,14 @@ class KidContentActivity : AppCompatActivity() {
         push(Page("Manage Kid Content", listOf(
             KidNode("📺   Live TV", null, "Live TV", open = { showLive() }),
             KidNode("🎬   Movies & Shows", null, "Movies", open = { showMovies() }),
-            KidNode("✅   Approved Content  (review / remove)", null, "Approved", open = { showApproved() }),
-            KidNode("⚙   Content settings for ${Profiles.kidName(this)}", null, "Settings", open = { contentSettingsDialog() })
+            KidNode("✅   Approved Content  (review / remove)", null, "Approved", open = { showApproved() })
         ), Kind.GLOBAL))
     }
 
-    // ---- per-kid content settings (hand-pick vs auto, list filter, hide unrated) ----
-    private fun contentSettingsDialog() {
-        val k = Profiles.activeKid(this) ?: run { b.status.text = "No kid selected."; return }
-        KidContentSettings.show(this, k) {
-            b.status.text = "Saved settings for ${k.name} ✓ — reopen a folder to apply."
-        }
-    }
-
-    /**
-     * Drop titles above the kid's age cap from the parent's browse/pick list. The cap is ALWAYS
-     * enforced (a parent should never be offered R/horror for a preschooler); [hideUnrated] decides
-     * whether titles with no resolvable certification are also hidden. Runs on io (network, cached).
-     */
-    private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> {
-        val k = Profiles.activeKid(this) ?: return items
-        // Global filter off: show every title, but still resolve certs so each row keeps its rating badge.
-        if (!Configs.kidFilterEnabled(this)) {
-            items.forEach { KidRating.cert(this, it.name, it.year) } // runs on io (callers execute on io)
-            return items
-        }
-        return items.filter { KidRating.show(this, it.name, it.year, k.ageBand, k.hideUnrated) }
-    }
-
-    /** Status hint when a whole folder gets filtered away, so an empty list doesn't look broken. */
-    private fun filteredEmptyHint(): String =
-        "Everything here is above ${Profiles.kidName(this)}'s age setting or has no age rating. " +
-            "Tap 🎛️ → “Hide titles with no age rating” to allow unrated titles."
+    // The parent's browse/pick list is unfiltered — the parent approves whatever they choose, and the kid
+    // then sees only the approved list (or, if this kid isn't content-managed, the whole catalogue).
+    // Kept as a pass-through so the search/browse plumbing below stays unchanged.
+    private fun filterForPick(items: List<Portal.VodItem>): List<Portal.VodItem> = items
 
     // ---- Approved Content (review & remove already-whitelisted items) ----
     private fun showApproved() {
@@ -460,10 +436,9 @@ class KidContentActivity : AppCompatActivity() {
         io.execute {
             val (items, pages) = Portal.vodList(cat.id, 1)
             VodIndex.add(applicationContext, Configs.active(applicationContext)?.sig() ?: "", items, cat.id)
-            val filtered = filterForPick(items)
             runOnUiThread {
-                b.status.text = if (items.isNotEmpty() && filtered.isEmpty()) filteredEmptyHint() else ""
-                push(Page(cat.title, vodNodes(cat, ArrayList(filtered), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
+                b.status.text = ""
+                push(Page(cat.title, vodNodes(cat, ArrayList(items), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
             }
         }
     }
@@ -499,14 +474,7 @@ class KidContentActivity : AppCompatActivity() {
         if (v.isSeries)
             KidNode("📁  ${v.name}", v.posterUrl, v.name, open = { showSeasons(v) })
         else
-            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v,
-                alreadyAdded = savedVodIds.contains(v.id), rating = ratingBadge(v.name, v.year))
-
-    /** Cached cert badge for a movie: the cert, "NR" if looked-up-but-none, "" if not yet resolved. */
-    private fun ratingBadge(name: String, year: String): String {
-        val c = KidRating.cachedCert(this, name, year) ?: return ""
-        return if (c.isBlank()) "NR" else c
-    }
+            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id))
 
     private fun showSeasons(series: Portal.VodItem) {
         b.status.text = "Loading ${series.name}…"

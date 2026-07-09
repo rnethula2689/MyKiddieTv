@@ -119,14 +119,13 @@ class SettingsActivity : AppCompatActivity() {
     private fun showKidsDialog() {
         AlertDialog.Builder(this)
             .setTitle("Kids")
-            .setItems(arrayOf("⏱  Screen time & bedtime", "📜  Watch history", "👤  Profile names & passcode", "🧩  Manage kid content", "🎛️  Content settings")) { _, w ->
+            .setItems(arrayOf("⏱  Screen time & bedtime", "📜  Watch history", "👤  Profile names & passcode", "🧩  Manage kid content")) { _, w ->
                 when (w) {
                     // Screen-time offers an extra "All kids" option; the rest manage one specific kid.
                     0 -> withChosenKid(allowAll = true) { KidScreenTime.show(this, it?.id) }
                     1 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidHistoryActivity::class.java)) }
                     2 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); showKidNamesDialog() }
                     3 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidContentActivity::class.java)) }
-                    4 -> withChosenKid { val kid = it!!; Profiles.setActiveKid(this, kid.id); KidContentSettings.show(this, kid) { toast("Saved ✓") } }
                 }
             }
             .setNegativeButton("Close", null)
@@ -142,7 +141,7 @@ class SettingsActivity : AppCompatActivity() {
             kids.size == 1 && !allowAll -> action(kids[0])
             else -> {
                 val labels = (if (allowAll) listOf("👥  All kids") else emptyList()) +
-                    kids.map { "${it.name}  ·  ${AgeBands.of(it.ageBand).name}" }
+                    kids.map { "${it.name}  ·  ${if (it.manageContent) "approved only" else "full access"}" }
                 AlertDialog.Builder(this)
                     .setTitle("Which kid?")
                     .setItems(labels.toTypedArray()) { _, i ->

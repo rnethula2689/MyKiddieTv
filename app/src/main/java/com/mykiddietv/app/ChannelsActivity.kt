@@ -1135,7 +1135,7 @@ class ChannelsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             kids.size == 1 -> { Profiles.setActiveKid(this, kids[0].id); startActivity(Intent(this, KidContentActivity::class.java)) }
             else -> {
-                val names = kids.map { "${it.name}  (${AgeBands.of(it.ageBand).name})" }.toTypedArray()
+                val names = kids.map { "${it.name}  (${if (it.manageContent) "approved only" else "full access"})" }.toTypedArray()
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Manage which kid's content?")
                     .setItems(names) { _, w -> Profiles.setActiveKid(this, kids[w].id); startActivity(Intent(this, KidContentActivity::class.java)) }

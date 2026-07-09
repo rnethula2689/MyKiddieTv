@@ -20,7 +20,6 @@ data class KidNode(
     val vod: Portal.VodItem? = null,
     val episode: Profiles.KidEpisode? = null,
     val alreadyAdded: Boolean = false,
-    val rating: String = "",   // age-cert badge for movies ("R", "PG-13", "NR"…); "" = no badge
     val open: (() -> Unit)? = null
 ) {
     val pickId: String? get() = channel?.id ?: vod?.id ?: episode?.key
@@ -47,8 +46,7 @@ class KidPickAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val n = items[position]
-        val base = if (n.alreadyAdded) "✓ ${n.label}" else n.label
-        holder.b.name.text = if (n.rating.isEmpty()) base else badged(base, n.rating)
+        holder.b.name.text = if (n.alreadyAdded) "✓ ${n.label}" else n.label
         if (n.isPick) {
             val on = isChecked(n)
             holder.b.check.text = if (on) "✅" else "◻"
@@ -73,21 +71,4 @@ class KidPickAdapter(
     }
 
     override fun getItemCount() = items.size
-
-    /** Append a bold, colour-coded rating chip after the title (colour = maturity level). */
-    private fun badged(base: String, cert: String): CharSequence {
-        val sp = android.text.SpannableStringBuilder(base).append("    ")
-        val start = sp.length
-        sp.append(cert)
-        val color = when (AgeBands.certLevel(cert)) {
-            0 -> 0xFF19C37D.toInt()   // G / TV-Y — green
-            1 -> 0xFF4F8CFF.toInt()   // PG / TV-PG — blue
-            2 -> 0xFFFFB020.toInt()   // PG-13 / TV-14 — amber
-            3 -> 0xFFFF5252.toInt()   // R / TV-MA — red
-            else -> 0xFF8B97A5.toInt() // NR / unrated — grey
-        }
-        sp.setSpan(android.text.style.ForegroundColorSpan(color), start, sp.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        sp.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), start, sp.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        return sp
-    }
 }

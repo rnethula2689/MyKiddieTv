@@ -18,10 +18,9 @@ MyKiddieTv has two sides:
   - A simple Kids home where children only see what you allow.
   - A parent area (Settings) protected by a passcode, where you configure
     everything below.
-You can set up MULTIPLE children, each with their own name, picture, AGE BAND
-and allowed content. The age band tailors how much each child's view shows -
-the youngest just tap-and-watch, while older kids get search, trailers and
-ratings (see section 4).
+You can set up MULTIPLE children, each with their own name and picture. For
+each child you choose ONE thing: whether YOU manage their content (they see
+only what you approve) or they get full access (see section 4).
 Set your parent passcode first (Settings > Parental PIN), then add each child
 and choose their content.
 
@@ -43,42 +42,29 @@ This PIN protects Settings and the parent-only areas, so children can't
 change what they're allowed to watch or exit kids mode.
 
 
-4. KID PROFILES, AGE BANDS & CONTENT
-------------------------------------
-You can create one profile per child, each with its own name, picture, age
-band and allowed content.
+4. KID PROFILES & CONTENT
+-------------------------
+You can create one profile per child, each with its own name and picture, and
+one simple content choice.
 
 Add or edit a child:
   1. On "Who's watching?", tap "+ Add kid" (or long-press an existing kid
      tile > Edit). Enter the parent passcode if asked.
   2. Enter the child's NAME.
-  3. Choose an AGE BAND - this decides how much their view shows:
-       - Preschool (2-4, rated G / TV-Y): tap a title and it just plays -
-         no extra screens.
-       - Younger Kids (5-8, G-PG / TV-G): a simple preview (big Play button,
-         a trailer, a short description).
-       - Older Kids (9-12, PG / TV-PG): adds a full description and search.
-       - Teens (13-17, PG-13 / TV-14): adds IMDb / Rotten Tomatoes ratings
-         and the full info screen.
+  3. Set "Manage this kid's content":
+       - ON (recommended): the child ONLY sees the shows & channels you
+         approve. Nothing else appears in their kid home.
+       - OFF: the child can watch EVERYTHING on the service, exactly like an
+         adult — INCLUDING restricted / R-rated / adult content. Turning it
+         off shows a warning you must confirm.
   4. Pick a PICTURE (a fun icon, a photo, or the default teddy bear).
   5. Save - the child appears on "Who's watching?".
 
-Choose HOW each child gets content — Manage Kid Content (parent Home, or
-Settings > Kids) > "Content settings for <name>":
-  - HAND-PICK (you curate): you approve each title yourself. Optionally tick
-    "While I pick, hide titles above the cap" so YOUR browsing list only shows
-    age-appropriate titles while you choose.
-  - AUTO (the app curates): the child can browse everything within their age
-    rating cap automatically - no picking needed. Handy for teens.
-  - "Hide titles with no age rating": some titles have no rating on record -
-    turn this ON to hide them (safer) or OFF to show them.
-Ratings come from TMDB (with OMDb as a fallback); a few obscure titles may be
-unrated.
-
-Build a hand-picked list:
-  Manage Kid Content > Live TV / Movies & Shows > tick titles > "Add selected".
-  Review or remove anything later under "Approved Content". Each child keeps
-  their OWN separate list.
+Build a managed child's approved list:
+  Manage Kid Content (parent Home 👶, or Settings > Kids > Manage kid content)
+  > Live TV / Movies & Shows > tick titles > "Add selected". Review or remove
+  anything later under "Approved Content". Each child keeps their OWN list.
+(A child with content management OFF ignores this list and sees everything.)
 (To change a child's PICTURE, long-press their tile > Edit — see section 7.)
 
 
@@ -106,15 +92,14 @@ Settings and full browsing.
 Manage a child: PRESS AND HOLD (long-press) their tile (parent passcode if
 set) for a menu:
   - "Manage content" — choose/approve what they can watch.
-  - "Edit" — change name, age band and picture (photo, gallery, fun icon,
-    or the default teddy bear).
+  - "Edit" — change name, content setting and picture (photo, gallery, fun
+    icon, or the default teddy bear).
   - "Delete" — remove the profile.
 On a remote, hold the OK/centre button on the tile.
 
-In the kid home, children see big, simple tiles of what they're allowed to
-watch, with no way to wander outside it. How much appears when they pick a
-title depends on that child's age band (section 4): the youngest just play,
-older kids get a preview / description / ratings.
+In the kid home, children see big, simple tiles. A managed child sees ONLY
+what you approved, with no way to wander outside it; a child with content
+management OFF can browse the full catalogue.
 
 
 8. WATCHING LIVE TV
@@ -186,8 +171,8 @@ Sleep timer is in the player menu and in Settings.
     show). (Kid profiles themselves live on the "Who's watching?" screen.)
   - Personalization: hide the "Recently Added" and/or "For You" rows.
   - Remote control (key mapping): re-assign remote buttons - see 17.
-  - Kids: manage each child's content, age band & content mode (hand-pick vs
-    auto), screen-time limit, bedtime, and watch history.
+  - Kids: manage each child's approved content, the "manage content" on/off
+    choice, screen-time limit, bedtime, and watch history.
   - Parental PIN: the passcode that protects this area.
   - Playback settings: buffering and hardware decoding (raise buffer for
     stutter; turn hardware decoding off if a video won't play).
