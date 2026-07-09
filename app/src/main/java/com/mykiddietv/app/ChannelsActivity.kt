@@ -1127,15 +1127,16 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Manage a kid's approved content — pick which kid when there are several. */
     private fun openManageKidContent() {
-        val kids = Profiles.kids(this)
+        // Only content-managed kids have an approved list to curate; full-access kids see everything.
+        val kids = Profiles.kids(this).filter { it.manageContent }
         when {
             kids.isEmpty() -> androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("No kid profiles yet")
-                .setMessage("Add a kid on the “Who's watching?” screen first, then you can choose their approved content.")
+                .setTitle("Nothing to manage")
+                .setMessage("No kids are set to managed content. On the “Who's watching?” screen, long-press a kid → Edit and turn on “Manage this kid's content” to approve titles for them.")
                 .setPositiveButton("OK", null).show()
             kids.size == 1 -> { Profiles.setActiveKid(this, kids[0].id); startActivity(Intent(this, KidContentActivity::class.java)) }
             else -> {
-                val names = kids.map { "${it.name}  (${if (it.manageContent) "approved only" else "full access"})" }.toTypedArray()
+                val names = kids.map { it.name }.toTypedArray()
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Manage which kid's content?")
                     .setItems(names) { _, w -> Profiles.setActiveKid(this, kids[w].id); startActivity(Intent(this, KidContentActivity::class.java)) }
