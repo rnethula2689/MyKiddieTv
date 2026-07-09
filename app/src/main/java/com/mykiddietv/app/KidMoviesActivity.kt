@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
  */
 class KidMoviesActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var b: ActivityKidmoviesBinding
     private val adapter = RowAdapter()
     private var connected = false
@@ -26,6 +27,10 @@ class KidMoviesActivity : AppCompatActivity() {
     private var autoCat: Portal.VodCat? = null
     private var autoSeries: Portal.VodItem? = null
     private var autoInEpisodes = false
+    // Full-catalogue browse controls (search / A–Z / sort).
+    private var searchSeq = 0
+    private var pendingSearch: Runnable? = null
+    private var autoSortAdded = true       // true = recently added (default), false = A–Z by name
 
     /** false = kid browses the whole catalogue; true = only the parent-approved whitelist. */
     private fun manageContent(): Boolean = Profiles.activeManageContent(this)
@@ -36,14 +41,38 @@ class KidMoviesActivity : AppCompatActivity() {
         setContentView(b.root)
         b.list.layoutManager = LinearLayoutManager(this)
         b.list.adapter = adapter
+        b.searchBtn.setOnClickListener { toggleSearch() }
+        b.sortBtn.setOnClickListener { cycleSort() }
+        buildAzBar()
         b.search.addTextChangedListener(object : android.text.TextWatcher {
-            override fun afterTextChanged(s: android.text.Editable?) { applyStreamingFilter(s?.toString() ?: "") }
+            override fun afterTextChanged(s: android.text.Editable?) { onSearchText(s?.toString() ?: "") }
             override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
             override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
         })
 
         connectPortal()
         showHome()
+    }
+
+    /** Show/hide the 🔍 button and the ⇅ sort + A–Z bar for the current screen. */
+    private fun setTools(search: Boolean, category: Boolean) {
+        b.searchBtn.visibility = if (search) View.VISIBLE else View.GONE
+        b.sortBtn.visibility = if (category) View.VISIBLE else View.GONE
+        b.azScroll.visibility = if (category) View.VISIBLE else View.GONE
+        if (!search && b.search.visibility == View.VISIBLE) { b.search.setText(""); b.search.visibility = View.GONE }
+    }
+
+    private fun toggleSearch() {
+        if (b.search.visibility == View.VISIBLE) { b.search.setText(""); b.search.visibility = View.GONE }
+        else {
+            b.search.visibility = View.VISIBLE; b.search.requestFocus()
+            (getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .showSoftInput(b.search, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun onSearchText(q: String) {
+        if (manageContent()) applyStreamingFilter(q) else movieSearch(q.trim())
     }
 
     override fun onResume() {
@@ -64,6 +93,7 @@ class KidMoviesActivity : AppCompatActivity() {
         Portal.sn = acct.sn
         io.execute {
             val err = Portal.connect()
+            if (err == null) VodIndex.ensure(applicationContext, acct.sig()) // instant search index
             runOnUiThread { connected = err == null }
         }
     }
@@ -72,7 +102,7 @@ class KidMoviesActivity : AppCompatActivity() {
         inStreaming = false; inSeries = null
         autoCat = null; autoSeries = null
         b.title.text = "Movies & Shows"
-        b.search.visibility = View.GONE
+        setTools(search = false, category = false)
         b.status.visibility = View.GONE
         adapter.submit(listOf(
             ChannelsActivity.Row("📺  Live Movies & Shows", null, "") { showStreaming() },
@@ -101,7 +131,7 @@ class KidMoviesActivity : AppCompatActivity() {
         }
         rows.sortBy { it.sortKey.lowercase() }
         streamingRows = rows
-        b.search.visibility = if (rows.isNotEmpty()) View.VISIBLE else View.GONE
+        setTools(search = rows.isNotEmpty(), category = false)
         applyStreamingFilter(b.search.text?.toString() ?: "")
         b.list.scrollToPosition(0)
     }
@@ -130,7 +160,7 @@ class KidMoviesActivity : AppCompatActivity() {
     private fun showAutoCategories() {
         autoCat = null; autoSeries = null; autoInEpisodes = false
         b.title.text = "Movies & Shows"
-        b.search.visibility = View.GONE
+        setTools(search = true, category = false)   // global search across the kid's allowed folders
         b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
         io.execute {
             val cats = Portal.vodCategories()
@@ -146,10 +176,11 @@ class KidMoviesActivity : AppCompatActivity() {
 
     private fun showAutoCategory(cat: Portal.VodCat) {
         autoCat = cat; autoSeries = null; autoInEpisodes = false
+        setTools(search = true, category = true)   // search + ⇅ sort + A–Z
         b.title.text = cat.title
         b.status.visibility = View.VISIBLE; b.status.text = "Loading ${cat.title}…"
         io.execute {
-            val (items, pages) = Portal.vodList(cat.id, 1)
+            val (items, pages) = Portal.vodList(cat.id, 1, autoSort())
             val rows = autoRows(cat, ArrayList(items), 1, pages)
             runOnUiThread {
                 b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
@@ -169,7 +200,7 @@ class KidMoviesActivity : AppCompatActivity() {
         if (loaded < total) rows.add(ChannelsActivity.Row("⬇  Load more", null, "zzzzz") {
             b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
             io.execute {
-                val (more, _) = Portal.vodList(cat.id, loaded + 1)
+                val (more, _) = Portal.vodList(cat.id, loaded + 1, autoSort())
                 acc.addAll(more)
                 val rows2 = autoRows(cat, acc, loaded + 1, total)
                 runOnUiThread { b.status.visibility = View.GONE; adapter.submit(rows2) }
@@ -180,6 +211,7 @@ class KidMoviesActivity : AppCompatActivity() {
 
     private fun showAutoSeasons(series: Portal.VodItem) {
         autoSeries = series; autoInEpisodes = false
+        setTools(search = false, category = false)
         b.title.text = series.name
         b.status.visibility = View.VISIBLE; b.status.text = "Loading ${series.name}…"
         io.execute {
@@ -197,6 +229,7 @@ class KidMoviesActivity : AppCompatActivity() {
 
     private fun showAutoEpisodes(series: Portal.VodItem, season: Portal.Season) {
         autoInEpisodes = true
+        setTools(search = false, category = false)
         b.title.text = "${series.name} — ${season.name}"
         b.status.visibility = View.VISIBLE; b.status.text = "Loading ${season.name}…"
         io.execute {
@@ -219,7 +252,7 @@ class KidMoviesActivity : AppCompatActivity() {
         if (eps.isEmpty()) { showStreaming(); return }
         inStreaming = true; inSeries = seriesId
         b.title.text = eps.first().seriesName
-        b.search.visibility = View.GONE
+        setTools(search = false, category = false)
         b.status.visibility = View.GONE
         adapter.submit(eps.map { ep ->
             ChannelsActivity.Row("🎬  ${ep.name}", ep.poster, ep.name) { playEpisode(ep) }
@@ -254,6 +287,8 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        // An open search closes first; then the normal drill-up.
+        if (b.search.visibility == View.VISIBLE) { b.search.setText(""); b.search.visibility = View.GONE; return }
         when {
             autoInEpisodes -> { val s = autoSeries; if (s != null) showAutoSeasons(s) else showAutoCategories() }
             autoSeries != null -> { val c = autoCat; if (c != null) showAutoCategory(c) else showAutoCategories() }
@@ -261,6 +296,83 @@ class KidMoviesActivity : AppCompatActivity() {
             inSeries != null -> showStreaming()
             inStreaming -> showHome()
             else -> super.onBackPressed()
+        }
+    }
+
+    // ---- Full-catalogue search / A–Z / sort (full-access kids) ----
+    private fun autoSort() = if (autoSortAdded) "added" else "name"
+
+    private fun cycleSort() {
+        autoSortAdded = !autoSortAdded
+        b.sortBtn.text = if (autoSortAdded) "🕐" else "🔤"
+        autoCat?.let { showAutoCategory(it) }
+    }
+
+    private fun movieRow(v: Portal.VodItem) =
+        if (v.isSeries) ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) }
+        else ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) }
+
+    /** Search movies/shows. All folders → global (index + every portal page); restricted → only the
+     *  kid's allowed folders (so hidden adult folders never surface in results). */
+    private fun movieSearch(query: String) {
+        pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
+        if (query.isEmpty()) { autoCat?.let { showAutoCategory(it) } ?: showAutoCategories(); return }
+        if (query.length < 2) return
+        b.azScroll.visibility = View.GONE
+        b.status.visibility = View.VISIBLE; b.status.text = "Searching…"
+        val seq = searchSeq
+        val kid = Profiles.activeKid(this)
+        val task = Runnable {
+            io.execute {
+                val out = LinkedHashMap<String, Portal.VodItem>()
+                if (kid == null || kid.allVodFolders) {
+                    if (VodIndex.ready) VodIndex.search(query).forEach { out[it.id] = it }
+                    Portal.vodSearch(query) { partial -> partial.forEach { out[it.id] = it }; postResults(seq, out.values.toList()) }
+                } else {
+                    for (cat in kid.vodFolders) {
+                        Portal.vodSearchInCategory(cat, query).forEach { out[it.id] = it }
+                        postResults(seq, out.values.toList())
+                    }
+                }
+                postResults(seq, out.values.toList())
+            }
+        }
+        pendingSearch = task; ui.postDelayed(task, 300)
+    }
+
+    private fun postResults(seq: Int, items: List<Portal.VodItem>) = runOnUiThread {
+        if (seq != searchSeq) return@runOnUiThread
+        b.status.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        if (items.isEmpty()) b.status.text = "No results."
+        adapter.submit(items.map { movieRow(it) })
+    }
+
+    private fun buildAzBar() {
+        val labels = listOf("ALL") + ('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() }
+        for (lbl in labels) {
+            val tv = android.widget.TextView(this)
+            tv.text = lbl; tv.setTextColor(0xFFE6EDF3.toInt()); tv.textSize = 15f
+            tv.setPadding(20, 12, 20, 12); tv.isFocusable = true; tv.isClickable = true
+            tv.setBackgroundResource(R.drawable.item_bg)
+            tv.setOnClickListener { azFilter(if (lbl == "ALL") null else lbl) }
+            b.azBar.addView(tv)
+        }
+    }
+
+    private fun azFilter(letter: String?) {
+        val cat = autoCat ?: return
+        if (b.search.text.isNotEmpty()) b.search.setText("")
+        if (letter == null) { showAutoCategory(cat); return }
+        b.status.visibility = View.VISIBLE; b.status.text = "Loading “$letter”…"
+        val seq = ++searchSeq
+        io.execute {
+            val items = Portal.vodByLetter(cat.id, letter)
+            runOnUiThread {
+                if (seq != searchSeq) return@runOnUiThread
+                b.status.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+                if (items.isEmpty()) b.status.text = "No titles starting with “$letter”."
+                adapter.submit(items.map { movieRow(it) }); b.list.scrollToPosition(0)
+            }
         }
     }
 }
