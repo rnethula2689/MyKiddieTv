@@ -126,7 +126,9 @@ class KidEditActivity : AppCompatActivity() {
             AlertDialog.Builder(this)
                 .setTitle("Allow ALL content?")
                 .setMessage("With content management OFF, this child can watch EVERYTHING on the service — " +
-                    "including restricted, R-rated and adult content, with no filtering.\n\nAre you sure?")
+                    "including restricted, R-rated and adult content.\n\n" +
+                    "You can still choose which Live TV and Movie folders they may browse (to hide adult " +
+                    "folders) — but not individual channels or titles within a folder.\n\nAre you sure?")
                 .setPositiveButton("Yes, allow everything") { _, _ -> manageContent = false }
                 .setNegativeButton("Cancel") { _, _ -> sw.isChecked = true }
                 .setOnCancelListener { sw.isChecked = true }

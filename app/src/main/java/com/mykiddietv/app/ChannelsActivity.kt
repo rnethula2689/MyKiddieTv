@@ -1140,7 +1140,7 @@ class ChannelsActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
             kids.size == 1 -> open(kids[0])
             else -> {
-                val names = kids.map { "${it.name}  (${if (it.manageContent) "approved titles" else "folders"})" }.toTypedArray()
+                val names = kids.map { "${it.name}  (${if (it.manageContent) "Approved content" else "Folders"})" }.toTypedArray()
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Manage which kid?")
                     .setItems(names) { _, w -> open(kids[w]) }

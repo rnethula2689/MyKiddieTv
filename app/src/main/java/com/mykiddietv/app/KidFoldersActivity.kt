@@ -106,13 +106,17 @@ class KidFoldersActivity : AppCompatActivity() {
         updateAllLabels()
     }
 
+    /** Add a checkbox into a 2-column grid ([parent] holds horizontal rows of up to two boxes). */
     private fun addBox(parent: LinearLayout, into: ArrayList<CheckBox>, label: String, id: String, checked: Boolean) {
+        val row = (parent.getChildAt(parent.childCount - 1) as? LinearLayout)?.takeIf { it.childCount < 2 }
+            ?: LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; parent.addView(this) }
         val cb = CheckBox(this)
         cb.text = label; cb.tag = id; cb.isChecked = checked
         cb.setTextColor(0xFFE6EDF3.toInt()); cb.textSize = 15f; cb.isFocusable = true
         cb.setPadding(cb.paddingLeft, dp(6), dp(6), dp(6))
+        cb.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         cb.setOnCheckedChangeListener { _, _ -> updateAllLabels() }
-        parent.addView(cb); into.add(cb)
+        row.addView(cb); into.add(cb)
     }
 
     private fun toggleAll(boxes: List<CheckBox>) {
