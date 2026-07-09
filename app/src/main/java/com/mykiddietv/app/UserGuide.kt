@@ -54,17 +54,21 @@ Add or edit a child:
   3. Set "Manage this kid's content":
        - ON (recommended): the child ONLY sees the shows & channels you
          approve. Nothing else appears in their kid home.
-       - OFF: the child can watch EVERYTHING on the service, exactly like an
-         adult — INCLUDING restricted / R-rated / adult content. Turning it
-         off shows a warning you must confirm.
+       - OFF: the child can browse the full service like an adult. You can
+         still hide adult folders — see "Choose allowed folders" below.
+         Turning management off shows a warning you must confirm.
   4. Pick a PICTURE (a fun icon, a photo, or the default teddy bear).
   5. Save - the child appears on "Who's watching?".
 
-Build a managed child's approved list:
+Managed child (management ON) — build their approved list:
   Manage Kid Content (parent Home 👶, or Settings > Kids > Manage kid content)
   > Live TV / Movies & Shows > tick titles > "Add selected". Review or remove
   anything later under "Approved Content". Each child keeps their OWN list.
-(A child with content management OFF ignores this list and sees everything.)
+
+Full-access child (management OFF) — choose their FOLDERS:
+  Open the same Manage Kid Content and pick that child (or long-press their
+  tile > "Choose allowed folders"). Tick which Live TV genres and Movie
+  categories they may browse; untick adult folders to hide them.
 (To change a child's PICTURE, long-press their tile > Edit — see section 7.)
 
 

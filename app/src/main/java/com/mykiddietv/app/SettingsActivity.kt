@@ -125,7 +125,7 @@ class SettingsActivity : AppCompatActivity() {
                     0 -> withChosenKid(allowAll = true) { KidScreenTime.show(this, it?.id) }
                     1 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidHistoryActivity::class.java)) }
                     2 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); showKidNamesDialog() }
-                    3 -> withChosenKid(managedOnly = true) { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidContentActivity::class.java)) }
+                    3 -> withChosenKid { val k = it!!; Profiles.setActiveKid(this, k.id); startActivity(Intent(this, if (k.manageContent) KidContentActivity::class.java else KidFoldersActivity::class.java)) }
                 }
             }
             .setNegativeButton("Close", null)
@@ -134,10 +134,10 @@ class SettingsActivity : AppCompatActivity() {
 
     /** Ask which kid to manage (skips the prompt when there's only one). [allowAll]=true adds an "All kids"
      *  choice that calls back with null. No kids → a hint toast. */
-    private fun withChosenKid(allowAll: Boolean = false, managedOnly: Boolean = false, action: (Profiles.Kid?) -> Unit) {
-        val kids = if (managedOnly) Profiles.kids(this).filter { it.manageContent } else Profiles.kids(this)
+    private fun withChosenKid(allowAll: Boolean = false, action: (Profiles.Kid?) -> Unit) {
+        val kids = Profiles.kids(this)
         when {
-            kids.isEmpty() -> toast(if (managedOnly) "No kids are set to managed content — edit a kid and turn on \"Manage this kid's content\"." else "Add a kid profile first (from the Who's-watching screen).")
+            kids.isEmpty() -> toast("Add a kid profile first (from the Who's-watching screen).")
             kids.size == 1 && !allowAll -> action(kids[0])
             else -> {
                 val labels = (if (allowAll) listOf("👥  All kids") else emptyList()) +

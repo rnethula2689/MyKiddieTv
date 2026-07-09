@@ -87,7 +87,8 @@ class KidHomeActivity : AppCompatActivity() {
 
     private fun openLive() {
         val manage = Profiles.activeManageContent(this)
-        val channels = if (manage) Profiles.allowedChannels(this) else allChannels
+        val channels = if (manage) Profiles.allowedChannels(this)
+            else allChannels.filter { Profiles.liveFolderAllowed(this, it.genreId) }
         if (channels.isEmpty()) {
             Toast.makeText(this, if (manage) "No channels yet — ask a grown-up." else "No channels available.", Toast.LENGTH_SHORT).show()
             return

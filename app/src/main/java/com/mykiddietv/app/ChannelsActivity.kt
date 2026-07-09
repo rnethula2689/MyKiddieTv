@@ -1127,19 +1127,23 @@ class ChannelsActivity : AppCompatActivity() {
 
     /** Manage a kid's approved content — pick which kid when there are several. */
     private fun openManageKidContent() {
-        // Only content-managed kids have an approved list to curate; full-access kids see everything.
-        val kids = Profiles.kids(this).filter { it.manageContent }
+        // Managed kid → pick approved titles; full-access kid → choose which folders they may browse.
+        val kids = Profiles.kids(this)
+        fun open(k: Profiles.Kid) {
+            Profiles.setActiveKid(this, k.id)
+            startActivity(Intent(this, if (k.manageContent) KidContentActivity::class.java else KidFoldersActivity::class.java))
+        }
         when {
             kids.isEmpty() -> androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Nothing to manage")
-                .setMessage("No kids are set to managed content. On the “Who's watching?” screen, long-press a kid → Edit and turn on “Manage this kid's content” to approve titles for them.")
+                .setTitle("No kid profiles yet")
+                .setMessage("Add a kid on the “Who's watching?” screen first.")
                 .setPositiveButton("OK", null).show()
-            kids.size == 1 -> { Profiles.setActiveKid(this, kids[0].id); startActivity(Intent(this, KidContentActivity::class.java)) }
+            kids.size == 1 -> open(kids[0])
             else -> {
-                val names = kids.map { it.name }.toTypedArray()
+                val names = kids.map { "${it.name}  (${if (it.manageContent) "approved titles" else "folders"})" }.toTypedArray()
                 androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Manage which kid's content?")
-                    .setItems(names) { _, w -> Profiles.setActiveKid(this, kids[w].id); startActivity(Intent(this, KidContentActivity::class.java)) }
+                    .setTitle("Manage which kid?")
+                    .setItems(names) { _, w -> open(kids[w]) }
                     .setNegativeButton("Cancel", null).show()
             }
         }

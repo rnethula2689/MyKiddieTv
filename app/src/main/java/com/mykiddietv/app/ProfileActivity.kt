@@ -150,19 +150,18 @@ class ProfileActivity : AppCompatActivity() {
 
     // ---- per-kid management (long-press) ----
     private fun manageKid(k: Profiles.Kid) {
-        // "Manage content" only makes sense for a content-managed kid (full-access kids see everything).
-        val items = ArrayList<String>()
-        if (k.manageContent) items.add("🎬  Manage content")
-        items.add("✏️  Edit (name, access, picture)")
-        items.add("🗑  Delete profile")
+        // Managed kid → approve titles; full-access kid → choose which folders they may browse.
+        val manageLabel = if (k.manageContent) "🎬  Manage content" else "📂  Choose allowed folders"
         AlertDialog.Builder(this)
             .setTitle(k.name)
-            .setItems(items.toTypedArray()) { _, w ->
-                val label = items[w]
-                when {
-                    label.startsWith("🎬") -> { Profiles.setActiveKid(this, k.id); startActivity(Intent(this, KidContentActivity::class.java)) }
-                    label.startsWith("✏️") -> startActivity(Intent(this, KidEditActivity::class.java).putExtra("kidId", k.id))
-                    else -> confirmDelete(k)
+            .setItems(arrayOf(manageLabel, "✏️  Edit (name, access, picture)", "🗑  Delete profile")) { _, w ->
+                when (w) {
+                    0 -> {
+                        Profiles.setActiveKid(this, k.id)
+                        startActivity(Intent(this, if (k.manageContent) KidContentActivity::class.java else KidFoldersActivity::class.java))
+                    }
+                    1 -> startActivity(Intent(this, KidEditActivity::class.java).putExtra("kidId", k.id))
+                    2 -> confirmDelete(k)
                 }
             }
             .setNegativeButton("Cancel", null)

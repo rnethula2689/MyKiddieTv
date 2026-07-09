@@ -28,7 +28,13 @@ object Profiles {
         val id: String,
         var name: String,
         var avatar: String = "",              // "" | "emoji:🦁" | "file:/path" (see Avatars)
-        var manageContent: Boolean = true,    // true = kid sees only the parent-approved whitelist; false = full catalogue (adult)
+        var manageContent: Boolean = true,    // true = kid sees only the parent-approved whitelist; false = full catalogue
+        // For a FULL-ACCESS kid (manageContent = false): which folders they may browse. all* = every folder,
+        // otherwise only the listed live-genre / vod-category ids. Lets a parent hide adult folders. (Ignored for a managed kid.)
+        var allLiveFolders: Boolean = true,
+        val liveFolders: MutableSet<String> = LinkedHashSet(),
+        var allVodFolders: Boolean = true,
+        val vodFolders: MutableSet<String> = LinkedHashSet(),
         val channels: MutableList<Portal.Channel> = ArrayList(),
         val vod: MutableList<Portal.VodItem> = ArrayList(),
         val episodes: MutableList<KidEpisode> = ArrayList(),
@@ -65,6 +71,8 @@ object Profiles {
         return JSONObject()
             .put("id", k.id).put("name", k.name).put("avatar", k.avatar)
             .put("manageContent", k.manageContent)
+            .put("allLiveFolders", k.allLiveFolders).put("liveFolders", JSONArray(k.liveFolders.toList()))
+            .put("allVodFolders", k.allVodFolders).put("vodFolders", JSONArray(k.vodFolders.toList()))
             .put("channels", ch).put("vod", vd).put("episodes", ep).put("downloads", dl)
     }
 
@@ -75,8 +83,12 @@ object Profiles {
             avatar = o.optString("avatar", ""),
             // Legacy profiles (pre-age-removal): anything that used to browse everything ("auto") maps to
             // full access; everyone else defaults to managed (approved-only) — the safe default.
-            manageContent = o.optBoolean("manageContent", o.optString("filterMode", "pick") != "auto")
+            manageContent = o.optBoolean("manageContent", o.optString("filterMode", "pick") != "auto"),
+            allLiveFolders = o.optBoolean("allLiveFolders", true),
+            allVodFolders = o.optBoolean("allVodFolders", true)
         )
+        o.optJSONArray("liveFolders")?.let { a -> for (i in 0 until a.length()) k.liveFolders.add(a.optString(i)) }
+        o.optJSONArray("vodFolders")?.let { a -> for (i in 0 until a.length()) k.vodFolders.add(a.optString(i)) }
         o.optJSONArray("channels")?.let { a ->
             for (i in 0 until a.length()) { val c = a.optJSONObject(i) ?: continue
                 k.channels.add(Portal.Channel(c.optString("id"), c.optString("name"), c.optString("number"),
@@ -145,6 +157,16 @@ object Profiles {
 
     /** Whether the active kid is limited to the parent-approved whitelist (true) or sees everything (false). */
     fun activeManageContent(ctx: Context): Boolean = activeKid(ctx)?.manageContent ?: true
+
+    /** For the active FULL-ACCESS kid: is this live-genre / vod-category folder allowed? (Managed kids ignore this.) */
+    fun liveFolderAllowed(ctx: Context, genreId: String): Boolean {
+        val k = activeKid(ctx) ?: return true
+        return k.allLiveFolders || k.liveFolders.contains(genreId)
+    }
+    fun vodFolderAllowed(ctx: Context, catId: String): Boolean {
+        val k = activeKid(ctx) ?: return true
+        return k.allVodFolders || k.vodFolders.contains(catId)
+    }
 
     /** Persist mutations made to the active kid object (its lists were changed in place). */
     private fun saveActive(ctx: Context, k: Kid) { saveKid(ctx, k) }

@@ -135,7 +135,7 @@ class KidMoviesActivity : AppCompatActivity() {
         io.execute {
             val cats = Portal.vodCategories()
             runOnUiThread {
-                val visible = cats.filter { ContentProfiles.vodCatVisible(this, it.id) } // honor content-profile guardrails
+                val visible = cats.filter { Profiles.vodFolderAllowed(this, it.id) } // only this kid's allowed folders
                 b.status.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
                 if (visible.isEmpty()) b.status.text = "Nothing to show right now."
                 adapter.submit(visible.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title) { showAutoCategory(c) } })
