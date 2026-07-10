@@ -1,4 +1,4 @@
-﻿package com.mykiddietv.app
+package com.mykiddietv.app
 
 import android.app.Activity
 import android.graphics.Color
@@ -15,9 +15,9 @@ import java.util.concurrent.Executors
 
 /**
  * Strimix-style subtitle picker used by BOTH players:
- *   ðŸ’¬ Subtitles                                   âœ•
- *   [ ðŸ”  <editable query> ]  [ ðŸŒ English âŒ„ ]  [ â†’ Search ]
- *   ðŸ’¬ name â€¢ N downloads                          â¬‡   (tap a row to apply)
+ *   💬 Subtitles                                   ✕
+ *   [ 🔍  <editable query> ]  [ 🌐 English ⌄ ]  [ → Search ]
+ *   💬 name • N downloads                          ⬇   (tap a row to apply)
  * The query is editable, the language dropdown persists the last choice, and results show each
  * subtitle's download count (quality signal). Auto-searches on open.
  */
@@ -51,15 +51,15 @@ object SubtitleDialog {
 
         val root = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; pad(this, 20, 16, 20, 16) }
 
-        // ---- header: ðŸ’¬ Subtitles ................ âœ• ----
+        // ---- header: 💬 Subtitles ................ ✕ ----
         val header = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val title = TextView(a).apply {
-            text = "ðŸ’¬  Subtitles"; textSize = 18f; setTextColor(Color.WHITE)
+            text = "💬  Subtitles"; textSize = 18f; setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         val closeBtn = TextView(a).apply {
-            text = "âœ•"; textSize = 18f; setTextColor(Color.WHITE)
+            text = "✕"; textSize = 18f; setTextColor(Color.WHITE)
             isClickable = true
             pad(this, 10, 4, 10, 4)
         }
@@ -67,7 +67,7 @@ object SubtitleDialog {
         header.addView(title); header.addView(closeBtn)
         root.addView(header)
 
-        // ---- search row: [ðŸ” query] [ðŸŒ English âŒ„] [â†’ Search] ----
+        // ---- search row: [🔍 query] [🌐 English ⌄] [→ Search] ----
         val row = LinearLayout(a).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -76,7 +76,7 @@ object SubtitleDialog {
         }
         val queryBox = EditText(a).apply {
             setText(initialQuery); setSelection(text.length)
-            hint = "Search subtitlesâ€¦"; setHintTextColor(0xFF6B7885.toInt())
+            hint = "Search subtitles…"; setHintTextColor(0xFF6B7885.toInt())
             setTextColor(Color.WHITE); textSize = 14f; maxLines = 1
             inputType = android.text.InputType.TYPE_CLASS_TEXT
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
@@ -101,10 +101,10 @@ object SubtitleDialog {
             ).apply { marginStart = (8 * dp).toInt() }
         }
         wireFocus(langBtn, 0xFF232A33.toInt())
-        fun renderLang() { langBtn.text = "ðŸŒ ${lang.label}  âŒ„" }
+        fun renderLang() { langBtn.text = "🌐 ${lang.label}  ⌄" }
         renderLang()
         val searchBtn = TextView(a).apply {
-            text = "â†’  Search"; textSize = 13f; setTextColor(Color.WHITE)
+            text = "→  Search"; textSize = 13f; setTextColor(Color.WHITE)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             isClickable = true; maxLines = 1
             pad(this, 14, 10, 14, 10)
@@ -116,10 +116,10 @@ object SubtitleDialog {
         row.addView(queryBox); row.addView(langBtn); row.addView(searchBtn)
         root.addView(row)
 
-        // ---- status line (âœ“ token / searching / no results) ----
+        // ---- status line (✓ token / searching / no results) ----
         val status = TextView(a).apply {
             textSize = 12f; setTextColor(0xFF19C37D.toInt())
-            text = if (Subtitles.apiKey.isNotBlank()) "âœ“  Using OpenSubtitles API" else "Using keyless search"
+            text = if (Subtitles.apiKey.isNotBlank()) "✓  Using OpenSubtitles API" else "Using keyless search"
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = (10 * dp).toInt() }
@@ -143,18 +143,18 @@ object SubtitleDialog {
         closeBtn.setOnClickListener { dlg.dismiss() }
 
         var searchSeq = 0
-        /** [strict] = an automatic search (dialog open / language change): junk-free â€” identity
+        /** [strict] = an automatic search (dialog open / language change): junk-free — identity
          *  match or clean "not found", like Strimix. Pressing Search runs the broad text match. */
         fun runSearch(strict: Boolean) {
             val q = queryBox.text.toString().trim()
             if (q.isEmpty()) return
             val mine = ++searchSeq
             status.setTextColor(0xFF9AA6B2.toInt())
-            status.text = "Searching ${lang.label} subtitlesâ€¦"
+            status.text = "Searching ${lang.label} subtitles…"
             list.removeAllViews()
             io.execute {
-                // Movies: resolve the EXACT feature via TMDb and ask for its subtitles by id â€” a text
-                // query fuzzy-matches junk ("David" â†’ David & Lisa 1962), the id returns only the real
+                // Movies: resolve the EXACT feature via TMDb and ask for its subtitles by id — a text
+                // query fuzzy-matches junk ("David" → David & Lisa 1962), the id returns only the real
                 // movie's releases (how Strimix gets clean results). Episodes keep the S01E02 text query.
                 // Strict (auto) searches filter text results to ones that actually NAME the title, so a
                 // regional movie unknown to OpenSubtitles shows "not found" instead of unrelated junk.
@@ -174,8 +174,8 @@ object SubtitleDialog {
                     if (results.isEmpty()) {
                         status.setTextColor(0xFFFF8A8A.toInt())
                         status.text = if (strict)
-                            "âš   No ${lang.label} subtitles found for this title.  Edit the title or press Search for a broader match."
-                        else "No ${lang.label} subtitles found for â€œ$qâ€."
+                            "⚠  No ${lang.label} subtitles found for this title.  Edit the title or press Search for a broader match."
+                        else "No ${lang.label} subtitles found for “$q”."
                         return@runOnUiThread
                     }
                     status.setTextColor(0xFF19C37D.toInt())
@@ -190,13 +190,13 @@ object SubtitleDialog {
                             ).apply { topMargin = (8 * dp).toInt() }
                         }
                         wireFocus(r, 0xFF10151B.toInt())
-                        r.addView(TextView(a).apply { text = "ðŸ’¬"; textSize = 14f; pad(this, 0, 0, 10, 0) })
+                        r.addView(TextView(a).apply { text = "💬"; textSize = 14f; pad(this, 0, 0, 10, 0) })
                         r.addView(TextView(a).apply {
                             text = sub.label; textSize = 13f; setTextColor(0xFFE6EDF3.toInt())
                             maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
                             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                         })
-                        r.addView(TextView(a).apply { text = "â¬‡"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt()); pad(this, 10, 0, 0, 0) })
+                        r.addView(TextView(a).apply { text = "⬇"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt()); pad(this, 10, 0, 0, 0) })
                         r.setOnClickListener { dlg.dismiss(); onPick(sub) }
                         list.addView(r)
                     }
@@ -227,10 +227,10 @@ object SubtitleDialog {
         dlg.show()
         dlg.window?.setLayout((a.resources.displayMetrics.widthPixels * 0.92f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
         searchBtn.requestFocus() // a safe landing spot until results arrive (then the 1st result takes focus)
-        runSearch(strict = true) // auto-search the pre-filled title on open â€” junk-free
+        runSearch(strict = true) // auto-search the pre-filled title on open — junk-free
     }
 
-    /** Keep only results whose release name actually contains the title's words â€” an auto-search
+    /** Keep only results whose release name actually contains the title's words — an auto-search
      *  for a regional movie OpenSubtitles doesn't know should say "not found", not list junk. */
     private fun relevantOnly(subs: List<Subtitles.Sub>, title: String): List<Subtitles.Sub> {
         val words = title.lowercase()
