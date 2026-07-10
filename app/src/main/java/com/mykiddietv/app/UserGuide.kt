@@ -157,9 +157,17 @@ play or remove.
 -----------------------
   - Cast to TV (player menu) sends the stream to a DLNA/Chromecast device on
     your network. (Not available on Fire OS devices.)
-  - Subtitles (movie player menu) searches/loads subtitles, matched to the
-    movie's RELEASE YEAR so you get the right film (not other same-name
-    movies); add an OpenSubtitles API key in Settings > Subtitles.
+  - Subtitles (movie player menu) opens a search: the movie's title is
+    pre-filled (edit it if needed), pick a LANGUAGE from the dropdown
+    (remembered for next time) and press Search. Each result shows its
+    DOWNLOAD COUNT — higher usually means better quality/sync. Tap one to
+    apply it; the chosen subtitle is remembered for that movie.
+  - In the VLC player, the 💬 button on the top bar picks between the movie's
+    built-in subtitle tracks, Off, or an online search. Movies with built-in
+    English subtitles show them automatically — same as the Default player.
+    If a subtitle appears slightly early or late, use 💬 > Adjust timing to
+    shift it in half-second steps.
+  - Add a free OpenSubtitles API key in Settings > Subtitles.
 
 
 15. PLAYER CONTROLS
@@ -192,7 +200,14 @@ Sleep timer is in the player menu and in Settings.
   - App updates: check for and install the latest version.
   - Sync & Backup: back up / restore / delete your saved lists.
   - Troubleshooting: diagnostics (see 18).
-  - User guide / About / Exit.
+  - User guide / About.
+  - Restart app: fully closes and relaunches the app (a quick fix for
+    glitches without reaching for the Fire TV settings).
+  - Restore factory defaults: wipes EVERYTHING — portal settings, kid
+    profiles, parental PIN, approved content, favourites, downloads and
+    caches — so the app starts like a brand-new install. Asks for
+    confirmation first; this cannot be undone.
+  - Exit.
 
 
 17. REMOTE CONTROL — MAP YOUR KEYS

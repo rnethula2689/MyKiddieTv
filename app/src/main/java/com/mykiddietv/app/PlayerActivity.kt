@@ -143,7 +143,7 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         )
-        b.subBtn.setOnClickListener { searchSubtitles() }
+        b.subBtn.setOnClickListener { showSubtitleMenu() }
         b.menuBtn.setOnClickListener { showMenu() }
         wireQuickControls()
         applyPlayPrefsScreen()   // restore session brightness + night mode
@@ -178,10 +178,31 @@ class PlayerActivity : AppCompatActivity() {
         val p = buildPlayer()
         player = p
         b.playerView.player = p
-        p.setMediaItem(MediaItem.fromUri(videoUrl))
+        // Subtitle to auto-attach: carried from the VLC engine (Switch player). Attached to the FIRST
+        // media item — the old "+800ms re-set" raced the initial buffering and silently lost the
+        // subtitle when switching engines on slow/4K streams.
+        // (Kid fork has no SubStore "saved subtitle per title" — only the carried subtitle applies.)
+        val carrySub = intent.getStringExtra("subPath") ?: ""
+        val autoSub = (if (carrySub.isNotEmpty()) File(carrySub) else null)
+            ?.takeIf { it.exists() && !isLive }
+        val firstItem = if (autoSub != null) {
+            currentSubPath = autoSub.absolutePath
+            MediaItem.Builder().setUri(videoUrl).setSubtitleConfigurations(listOf(srtConfig(autoSub))).build()
+        } else MediaItem.fromUri(videoUrl)
+        // Start buffering DIRECTLY at the resume position — prepare()+seekTo() double-buffers
+        // (loads at 0, discards it, re-buffers at the resume point) which stutters on open.
+        if (resumeStart > 0 && !isLive) p.setMediaItem(firstItem, resumeStart)
+        else p.setMediaItem(firstItem)
         p.prepare()
-        if (resumeStart > 0 && !isLive) p.seekTo(resumeStart)
         p.playWhenReady = true
+        // VOD: auto-show the stream's EMBEDDED subtitles/closed-captions by default (parity with VLC
+        // and Strimix). setSelectUndeterminedTextLanguage is ESSENTIAL — CEA-608/708 closed captions
+        // (common on US TV shows like "On the Case…") carry NO language, so an "en"-only preference
+        // deselects them; this makes them auto-select like Strimix's "Closed captions 1".
+        if (!isLive && autoSub == null) p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .setPreferredTextLanguage("en")
+            .setSelectUndeterminedTextLanguage(true)
+            .build()
         applyPlayPrefsAudio()   // restore session mute/volume
 
         if (resumeId.isNotBlank() && !isLive) resumeHandler.postDelayed(resumeSaver, 10_000)
@@ -197,12 +218,6 @@ class PlayerActivity : AppCompatActivity() {
             speedIdx = speeds.indexOfFirst { it == carrySpeed }.let { if (it < 0) 2 else it }
             p.setPlaybackSpeed(speeds[speedIdx]); updateSpeedBtn()
         }
-        val carrySub = intent.getStringExtra("subPath") ?: ""
-        if (carrySub.isNotEmpty()) {
-            val f = File(carrySub)
-            if (f.exists()) b.playerView.postDelayed({ applySubtitleFile(f, toast = false) }, 800)
-        }
-
         // TV: land focus on the seek bar (not Play/Pause) on open so D-pad rewind/forward work at once.
         if (onTv && !isLive) focusSeekBar()
         screenLock = ScreenLock(this)
@@ -249,9 +264,15 @@ class PlayerActivity : AppCompatActivity() {
         // Wrap so the factory can open both the http stream AND the local subtitle file://.
         val dataSource = androidx.media3.datasource.DefaultDataSource.Factory(this, http)
         val (minBuf, maxBuf) = Configs.exoBufferMs(this)
+        // HARD byte cap on the sample buffer. Buffered samples live on the JAVA heap (128 MB cap on
+        // 32-bit Fire devices) — prioritizing time over size let a 4K movie buffer 60-120s ≈ 200-350 MB
+        // → OutOfMemoryError loop when playing/resuming (verified via live heap sawtooth on a Fire HD).
+        // With the cap, high-bitrate titles simply hold ~32 MB of buffer and refill continuously; the
+        // time targets still give low-bitrate titles their full head-start.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(minBuf, maxBuf, 1500, 3000)
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(32 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
         // Honour the user's hardware-decoding pref, plus the auto software-fallback flag.
         val mode = if (forceSoftware || !Configs.hwDecode(this))
@@ -529,30 +550,42 @@ class PlayerActivity : AppCompatActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    /** Clean the display title into a search query (drop language/category/quality tags). */
-    private fun searchQuery(): String =
-        titleText.substringBefore(" / ").substringBefore(" - ").substringBefore(" (").trim()
+    /** Clean the display title into a search query (drops tags; adds S01E02 for episodes). */
+    private fun searchQuery(): String = Subtitles.queryFor(titleText)
+
+    /** 💬 picker: Off / the stream's embedded subtitle + closed-caption tracks / online search. */
+    private fun showSubtitleMenu() {
+        val p = player ?: run { searchSubtitles(); return }
+        val groups = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        val textDisabled = p.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val anySelected = groups.any { g -> (0 until g.length).any { g.isTrackSelected(it) } }
+        data class Row(val label: String, val apply: () -> Unit)
+        val rows = ArrayList<Row>()
+        rows.add(Row(if (textDisabled || !anySelected) "✔   Off" else "✖   Off") {
+            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+        })
+        for (g in groups) for (i in 0 until g.length) {
+            val f = g.getTrackFormat(i)
+            val name = f.label ?: f.language?.uppercase() ?: "Closed captions"
+            val sel = !textDisabled && g.isTrackSelected(i)
+            rows.add(Row((if (sel) "✔   " else "💬   ") + name) {
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setOverrideForType(androidx.media3.common.TrackSelectionOverride(g.mediaTrackGroup, i))
+                    .build()
+            })
+        }
+        rows.add(Row("🔍   Search online subtitles…") { searchSubtitles() })
+        AlertDialog.Builder(this).setTitle("Subtitles")
+            .setItems(rows.map { it.label }.toTypedArray()) { _, w -> rows[w].apply() }
+            .setNegativeButton("Cancel", null).show()
+    }
 
     private fun searchSubtitles() {
         val q = searchQuery()
         if (q.isEmpty()) return
-        val label = if (movieYear.isNotBlank()) "$q ($movieYear)" else q
-        Toast.makeText(this, "Searching English subtitles for “$label”…", Toast.LENGTH_SHORT).show()
-        io.execute {
-            val results = Subtitles.search(q, movieYear)
-            runOnUiThread {
-                if (results.isEmpty()) {
-                    Toast.makeText(this, "No subtitles found for “$q”.", Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
-                }
-                val names = results.map { it.name }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setTitle("English subtitles (${results.size})")
-                    .setItems(names) { _, which -> applySubtitle(results[which]) }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        }
+        SubtitleDialog.show(this, q, movieYear) { applySubtitle(it) }
     }
 
     private fun applySubtitle(sub: Subtitles.Sub) {
@@ -570,20 +603,21 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** Attach a local subtitle .srt to the current stream at the current position (reused when a
-     *  subtitle is carried over from the VLC engine). */
+    private fun srtConfig(file: File) = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
+        .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+        .setLanguage("en")
+        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+        .build()
+
+    /** Attach a local subtitle .srt to the current stream at the current position (used when the
+     *  user picks a new subtitle from the search dialog mid-playback). */
     private fun applySubtitleFile(file: File, toast: Boolean) {
         if (!file.exists()) return
         val pl = player ?: return
         val pos = pl.currentPosition
-        val subConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
-            .setMimeType(MimeTypes.APPLICATION_SUBRIP)
-            .setLanguage("en")
-            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-            .build()
         val item = MediaItem.Builder()
             .setUri(videoUrl)
-            .setSubtitleConfigurations(listOf(subConfig))
+            .setSubtitleConfigurations(listOf(srtConfig(file)))
             .build()
         pl.setMediaItem(item, pos)
         pl.prepare()

@@ -52,7 +52,10 @@ class ChannelsActivity : AppCompatActivity() {
     private var vodFilterVal: String? = null
     private var vodSortKey = "default"                // default | za | az | year_desc | year_asc | run_asc | run_desc
     private var vodLoadSeq = 0                         // cancels a stale all-pages load when the list changes
-    private val pageIo = Executors.newFixedThreadPool(8) // parallel page fetches (fast "load all")
+    private val pageIo = Executors.newFixedThreadPool(2) // parallel page fetches; kept LOW on purpose —
+    // poster/still downloads hit the same portal host, and at 4 threads the page fetches saturated the
+    // portal's per-client connection cap so visible thumbnails stalled until the full load finished.
+    // 2 threads leaves headroom for posters to keep flowing while pages load (slower full load = OK).
     private val vodSortLabels = linkedMapOf(
         "default" to "Newest", "az" to "A–Z", "za" to "Z–A",
         "year_desc" to "Year ↓", "year_asc" to "Year ↑", "run_asc" to "Shortest", "run_desc" to "Longest"
@@ -116,7 +119,8 @@ class ChannelsActivity : AppCompatActivity() {
         b.profileBtn.setOnClickListener { showProfilePicker() }
         b.profileBtn.setOnFocusChangeListener { v, f -> val s = if (f) 1.18f else 1f; v.animate().scaleX(s).scaleY(s).setDuration(120).start() }
 
-        b.liveCatList.layoutManager = LinearLayoutManager(this)
+        // Same multi-column chip grid as the Movies/VOD folders (was a single tall column).
+        b.liveCatList.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this, chipCols)
         b.liveCatList.adapter = liveCatAdapter
 
         // Floating bottom tab bar (home only).
@@ -398,7 +402,14 @@ class ChannelsActivity : AppCompatActivity() {
         // Returning from a player/child → rebuild the current screen so counts and
         // Continue-Watching progress are current (all in-memory; no portal reconnect).
         val top = backStack.lastOrNull()
-        if (top?.rebuild != null) { backStack.removeLast(); top.rebuild!!.invoke() }
+        if (top?.rebuild != null) {
+            // EXCEPT a movie folder: its items are already in memory (vodBase) and the grid is still
+            // on screen exactly as the user left it. Rebuilding would refetch the ENTIRE category
+            // from the portal (a 1700-title folder blanked out + reloaded for ~30s on every return
+            // from a movie/series detail). Nothing in a folder grid needs refreshing — just resume.
+            if (top.kind == SearchKind.VOD_CATEGORY && vodCatRef?.id == top.scopeId) return
+            backStack.removeLast(); top.rebuild!!.invoke()
+        }
     }
 
     override fun onStop() {
@@ -501,7 +512,7 @@ class ChannelsActivity : AppCompatActivity() {
             Page(
                 "MyKiddieTv",
                 listOf(
-                    Row("⬇   Downloads (offline)", null) { startActivity(Intent(this, DownloadsActivity::class.java)) },
+                    Row("📥   Downloads (offline)", null) { startActivity(Intent(this, DownloadsActivity::class.java)) },
                     Row("🔄   Retry connection", null) { connectAndLoad(true) }
                 ),
                 kind = SearchKind.LOCAL
@@ -632,6 +643,10 @@ class ChannelsActivity : AppCompatActivity() {
     }
 
     private fun display(page: Page, focusPos: Int = 0) {
+        // Any leftover load/search status belongs to the screen we're leaving (e.g. backing out of a
+        // folder mid-load left "Loading… N titles" stuck on every screen). The owner re-shows it if
+        // it's still relevant.
+        b.status.visibility = View.GONE
         b.title.text = page.title
         b.search.hint = when (page.kind) {
             SearchKind.GLOBAL -> "Search channels, movies & shows…"
@@ -689,6 +704,9 @@ class ChannelsActivity : AppCompatActivity() {
             return
         }
         if (backStack.size > 1) {
+            // Leaving a movie folder cancels its in-flight all-pages load (see the stale-guard in
+            // loadVodAll) — otherwise it keeps fetching for minutes and can clobber the next screen.
+            if (cur?.kind == SearchKind.VOD_CATEGORY) vodLoadSeq++
             backStack.removeLast()
             val prev = backStack.last()
             // Rebuild the screen we're returning to (refreshes favourite counts on TV, no pull needed).
@@ -859,12 +877,12 @@ class ChannelsActivity : AppCompatActivity() {
             val added = WatchLater.add(applicationContext, kind, id, title, poster ?: "", source)
             android.widget.Toast.makeText(this, if (added) "Added to Watch Later" else "Already in Watch Later", android.widget.Toast.LENGTH_SHORT).show()
         }
-        labels.add("⬇  Download for offline"); acts.add {
+        labels.add("📥  Download for offline"); acts.add {
             if (Downloads.has(applicationContext, id)) {
                 android.widget.Toast.makeText(this, "Already saved (or downloading). See Downloads.", android.widget.Toast.LENGTH_SHORT).show()
             } else {
                 Downloads.enqueue(applicationContext, id, title, poster ?: "", source)
-                android.widget.Toast.makeText(this, "Download started — see ⬇ Downloads.", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this, "Download started — see 📥 Downloads.", android.widget.Toast.LENGTH_LONG).show()
             }
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
@@ -1182,19 +1200,19 @@ class ChannelsActivity : AppCompatActivity() {
         // Only the categories/channels this profile is allowed to see.
         val visChannels = allChannels.filter { ContentProfiles.liveCatVisible(this, it.genreId) }
         // Keep the overlay up while the player launches (hidden in onStop) so home doesn't flash through.
-        rows.add(Row("📺  TV Guide — what's on now", null, sortKey = "TV Guide") {
+        rows.add(Row("📺  TV Guide — what's on now", null, sortKey = "TV Guide", chip = true) {
             EpgGuideActivity.channels = visChannels
             startActivity(Intent(this, EpgGuideActivity::class.java))
         })
         if (favChannels.isNotEmpty())
-            rows.add(Row("⭐  Favourites  (${favChannels.size})", null, sortKey = "Favourites") { openLiveGrid(favChannels, "Favourites") })
-        rows.add(Row("All Channels  (${visChannels.size})", null, sortKey = "All Channels") { openLiveGrid(visChannels, "All Channels") })
+            rows.add(Row("⭐  Favourites  (${favChannels.size})", null, sortKey = "Favourites", chip = true) { openLiveGrid(favChannels, "Favourites") })
+        rows.add(Row("All Channels  (${visChannels.size})", null, sortKey = "All Channels", chip = true) { openLiveGrid(visChannels, "All Channels") })
         for (g in genres) {
             if (!ContentProfiles.liveCatVisible(this, g.id)) continue
             val list = byGenre[g.id] ?: emptyList()
             if (list.isEmpty() && !g.censored) continue
             val label = (if (g.censored) "🔒  " else "") + g.title + (if (list.isNotEmpty()) "  (${list.size})" else "")
-            rows.add(Row(label, null, sortKey = g.title) { openGenre(g) })
+            rows.add(Row(label, null, sortKey = g.title, chip = true) { openGenre(g) })
         }
         liveCatRows = rows
         liveCatAdapter.submit(rows)
@@ -1418,8 +1436,8 @@ class ChannelsActivity : AppCompatActivity() {
         val favChannels = allChannels.filter { favs.contains(it.id) }
         val visChannels = allChannels.filter { ContentProfiles.liveCatVisible(this, it.genreId) }
         if (favChannels.isNotEmpty())
-            rows.add(Row("⭐  Favourites  (${favChannels.size})", null, sortKey = "Favourites") { showLiveFavRoot() })
-        rows.add(Row("All Channels  (${visChannels.size})", null, sortKey = "All Channels") { openLiveGrid(visChannels, "All Channels") })
+            rows.add(Row("⭐  Favourites  (${favChannels.size})", null, sortKey = "Favourites", chip = true) { showLiveFavRoot() })
+        rows.add(Row("All Channels  (${visChannels.size})", null, sortKey = "All Channels", chip = true) { openLiveGrid(visChannels, "All Channels") })
         for (g in genres) {
             if (!ContentProfiles.liveCatVisible(this, g.id)) continue
             val list = byGenre[g.id] ?: emptyList()
@@ -1427,7 +1445,7 @@ class ChannelsActivity : AppCompatActivity() {
             // empty here — show them anyway (locked) and load their channels on demand.
             if (list.isEmpty() && !g.censored) continue
             val label = (if (g.censored) "🔒  " else "") + g.title + (if (list.isNotEmpty()) "  (${list.size})" else "")
-            rows.add(Row(label, null, sortKey = g.title) { openGenre(g) })
+            rows.add(Row(label, null, sortKey = g.title, chip = true) { openGenre(g) })
         }
         push(Page("Live TV", rows, kind = SearchKind.CHANNELS, scopeChannels = visChannels, rebuild = { showLiveGenres() }))
     }
@@ -1786,20 +1804,54 @@ class ChannelsActivity : AppCompatActivity() {
             // Fetch pages 2..N concurrently; cap as a runaway guard.
             val last = pages.coerceAtMost(1000)
             val futures = (2..last).map { p ->
-                pageIo.submit(java.util.concurrent.Callable { Portal.vodList(cat.id, p, "added").first })
+                pageIo.submit(java.util.concurrent.Callable {
+                    // Superseded (user left the folder / a new load started)? Skip the network call so
+                    // the stale queued pages drain instantly instead of hogging the pool + the portal's
+                    // connections for minutes — that contention is what froze the UI and starved posters.
+                    if (seq != vodLoadSeq) emptyList() else Portal.vodList(cat.id, p, "added").first
+                })
             }
             val rest = ArrayList<Portal.VodItem>()
-            for (f in futures) {
+            // Progressive render: on the plain default view, new titles are APPENDED to the grid as
+            // their pages arrive (~3 pages per batch) so the user can browse (and thumbnails load)
+            // during a big load. Previously the grid held only page 1 until every page was in — on a
+            // 150-page folder that looked like "thumbnails stopped loading" for minutes.
+            val progressive = vodSortKey == "default"
+            var cleanAppend = progressive // false = something changed mid-load → one-shot render at the end
+            var pushed = 0                // rest-items already appended to the visible grid
+            for ((i, f) in futures.withIndex()) {
                 try { rest.addAll(f.get()) } catch (_: Exception) {}
                 val soFar = first.size + rest.size
-                runOnUiThread { if (seq == vodLoadSeq) b.status.text = "Loading… $soFar titles" }
+                val newN = rest.size - pushed
+                val batch = if (progressive && newN > 0 && (newN >= 42 || i == futures.size - 1))
+                    ArrayList(rest.subList(pushed, rest.size)) else null
+                val snapshot = if (batch != null) ArrayList<Portal.VodItem>(first).also { it.addAll(rest) } else null
+                if (batch != null) pushed = rest.size
+                runOnUiThread {
+                    if (seq != vodLoadSeq) return@runOnUiThread
+                    b.status.text = "Loading… $soFar titles"
+                    if (batch != null && cleanAppend) {
+                        // A filter / search / sort applied mid-load changes what's on screen —
+                        // stop appending and let the final one-shot render handle it.
+                        if (vodFilterAttr == null && b.search.text.isEmpty() && vodSortKey == "default") {
+                            vodBase = snapshot!!
+                            adapter.append(batch.map { vodItemRow(it, poster = true) })
+                        } else cleanAppend = false
+                    }
+                }
             }
             runOnUiThread {
                 if (seq != vodLoadSeq) return@runOnUiThread
                 vodBase = ArrayList<Portal.VodItem>(first).also { it.addAll(rest) }
                 vodLoaded = pages
                 b.status.visibility = View.GONE
-                renderVodItems(0)
+                // Everything already appended in load order → keep the user's scroll/focus and just
+                // finalise the header count. Otherwise (sort/filter/search view) render in one shot.
+                if (cleanAppend && vodFilterAttr == null && b.search.text.isEmpty() && vodSortKey == "default") {
+                    val base = (vodCatRef?.title ?: cat.title).substringBefore("  (")
+                    b.title.text = "$base  (${vodBase.size})"
+                    updateVodButtons()
+                } else renderVodItems(0)
                 // Index this fully-loaded folder for instant/offline search (data's already fetched → no extra network).
                 val idxList = ArrayList(vodBase); val ps = cachedSig ?: ""
                 io.execute { VodIndex.add(applicationContext, ps, idxList, cat.id) }

@@ -38,9 +38,46 @@ class SettingsActivity : AppCompatActivity() {
         b.rowDiag.setOnClickListener { startActivity(Intent(this, DiagnosticsActivity::class.java)) }
         b.rowHelp.setOnClickListener { startActivity(Intent(this, HelpActivity::class.java)) }
         b.rowAbout.setOnClickListener { About.show(this) }
+        b.rowRestart.setOnClickListener { restartApp() }
+        b.rowFactory.setOnClickListener { confirmFactoryReset() }
         b.rowExit.setOnClickListener { finishAffinity() }
 
         b.rowProviders.requestFocus()
+    }
+
+    /** Full cold restart via RestartActivity — a trampoline in its OWN process that outlives this one,
+     *  kills it, and relaunches the app. (An AlarmManager relaunch was silently blocked by Fire OS's
+     *  background-activity-launch restrictions: the app exited but never came back.) */
+    private fun restartApp() {
+        startActivity(
+            Intent(this, RestartActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                .putExtra("pid", android.os.Process.myPid())
+        )
+    }
+
+    /** Wipe ALL app data (prefs, profiles, portal settings, caches, downloads, databases) — a true
+     *  "like a fresh install" reset. clearApplicationUserData() is atomic and kills the app itself. */
+    private fun confirmFactoryReset() {
+        AlertDialog.Builder(this)
+            .setTitle("🧹  Restore factory defaults?")
+            .setMessage(
+                "This wipes EVERYTHING and cannot be undone:\n\n" +
+                "• Portal / provider settings\n" +
+                "• Profiles and parental PIN\n" +
+                "• Favourites, Watch Later, Continue Watching\n" +
+                "• Downloads and all cached data\n\n" +
+                "The app will close. When you reopen it, it starts like a brand-new install."
+            )
+            .setPositiveButton("Wipe everything") { _, _ ->
+                val ok = try {
+                    (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).clearApplicationUserData()
+                } catch (_: Exception) { false }
+                if (!ok) toast("Couldn't reset — please clear the app's data from Android Settings.")
+                // On success Android wipes all data and kills the process — nothing more to do here.
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun toast(m: String) = android.widget.Toast.makeText(this, m, android.widget.Toast.LENGTH_SHORT).show()

@@ -78,6 +78,31 @@ object Tmdb {
         if (id == null) null else parseDetails(JSONObject(httpGet("https://api.themoviedb.org/3/tv/$id?api_key=$apiKey&append_to_response=videos,aggregate_credits")), title, true)
     } catch (_: Exception) { null }
 
+    /** TMDb id of a TV series (used to fetch per-season episode stills). */
+    fun tvIdFor(apiKey: String, title: String, year: String): Int? = try {
+        searchId(apiKey, "tv", title, year) ?: (if (year.isNotBlank()) searchId(apiKey, "tv", title, "") else null)
+    } catch (_: Exception) { null }
+
+    /** TMDb id of a movie (used for exact-feature subtitle search — text queries fuzzy-match junk). */
+    fun movieIdFor(apiKey: String, title: String, year: String): Int? = try {
+        searchId(apiKey, "movie", title, year) ?: (if (year.isNotBlank()) searchId(apiKey, "movie", title, "") else null)
+    } catch (_: Exception) { null }
+
+    /** Real per-episode stills for one season, keyed by episode number (w300). Empty on any failure. */
+    fun seasonStills(apiKey: String, tvId: Int, seasonNumber: Int): Map<Int, String> {
+        return try {
+            val js = JSONObject(httpGet("https://api.themoviedb.org/3/tv/$tvId/season/$seasonNumber?api_key=$apiKey"))
+            val eps = js.optJSONArray("episodes") ?: return emptyMap()
+            val out = HashMap<Int, String>()
+            for (i in 0 until eps.length()) {
+                val e = eps.optJSONObject(i) ?: continue
+                val p = e.optString("still_path")
+                if (p.isNotBlank() && p != "null") out[e.optInt("episode_number")] = "https://image.tmdb.org/t/p/w300$p"
+            }
+            out
+        } catch (_: Exception) { emptyMap() }
+    }
+
     /** US content certification (e.g. "PG-13", "TV-14") for the age filter — tries movie, then TV. */
     fun certification(apiKey: String, title: String, year: String): String? {
         if (apiKey.isBlank() || title.isBlank()) return null

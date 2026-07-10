@@ -231,6 +231,9 @@ class LiveVlcActivity : AppCompatActivity() {
             knownDurationMs = intent.getLongExtra("durationSec", 0) * 1000 // program length → stable scrub timeline
             b.controlBar.visibility = View.VISIBLE   // catch-up: bar stays visible
             wireTransportControls()
+            // Subtitle icon (ExoPlayer's CC-button parity): pick embedded tracks, turn off, or search online.
+            b.subBtn.visibility = View.VISIBLE
+            b.subBtn.setOnClickListener { showSubtitleMenu() }
             if (isVod) {
                 b.recBtn.visibility = View.GONE   // recording a movie/episode makes no sense
                 val rs = intent.getLongExtra("resumeStart", 0L)
@@ -344,7 +347,7 @@ class LiveVlcActivity : AppCompatActivity() {
                     android.widget.Toast.makeText(this, "Timeshift unavailable right now", android.widget.Toast.LENGTH_SHORT).show()
                     returnToLive(); return@runOnUiThread
                 }
-                play(u)
+                freshPlay(u)
             }
         }
     }
@@ -369,7 +372,7 @@ class LiveVlcActivity : AppCompatActivity() {
             val u = Portal.createLink(ch.cmd)
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
-                if (!u.isNullOrEmpty()) { liveUrl = u; play(u) } else b.status.text = "Couldn't return to live"
+                if (!u.isNullOrEmpty()) { liveUrl = u; freshPlay(u) } else b.status.text = "Couldn't return to live"
             }
         }
     }
@@ -436,6 +439,12 @@ class LiveVlcActivity : AppCompatActivity() {
                 if (isArchive || timeshifting) b.playBtn.text = "⏸"
             }
             MediaPlayer.Event.Paused -> { if (isArchive || timeshifting) b.playBtn.text = "▶" }
+            // Feed the interpolated clock used by the subtitle overlay (mp.time alone lags 1-2s on
+            // Fire's MediaTek decode — "no reference clock" — making subs appear late).
+            MediaPlayer.Event.TimeChanged -> {
+                vlcTimeBase = ev.timeChanged
+                vlcTimeStamp = android.os.SystemClock.uptimeMillis()
+            }
             MediaPlayer.Event.EndReached -> {
                 if (isVod) ui.post { onVodEnded() }
                 else if (isArchive) b.playBtn.text = "▶"
@@ -503,6 +512,22 @@ class LiveVlcActivity : AppCompatActivity() {
         player.play()
     }
 
+    /**
+     * Switch to a new stream with a *fresh* decoder. Reusing the same MediaPlayer across a stream
+     * change (play()'s stop + new media) can segfault the hardware video decoder on low-end MediaTek
+     * boxes (MtkOmxVdecDecod SIGSEGV → whole-app crash-loop), which is what killed the app during
+     * live↔timeshift transitions and channel surfing. Tearing the player fully down and rebuilding it
+     * guarantees the old OMX decode session is released before the new one starts.
+     * MUST be called on the UI thread and never from inside a VLC event callback.
+     */
+    private fun freshPlay(url: String) {
+        val vlc = libVlc ?: return
+        try { mp?.let { it.stop(); if (vlcAttached) it.detachViews(); it.release() } } catch (_: Exception) {}
+        vlcAttached = false
+        buildVlcPlayer(vlc)
+        play(url)
+    }
+
     // ---------------------------------------------------------------------------------------------
     // VOD-in-VLC: resume, Continue Watching and autoplay-next (parity with the ExoPlayer VOD screen)
     // ---------------------------------------------------------------------------------------------
@@ -560,6 +585,7 @@ class LiveVlcActivity : AppCompatActivity() {
         knownDurationMs = 0            // new episode: unknown length → fall back to VLC's own timeline
         seekTarget = -1L; startSeekTo = 0
         vodSubPath = ""               // a new episode has its own (or no) subtitle; speed persists
+        stopSrtOverlay()
         android.widget.Toast.makeText(this, "▶  Next: ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
         io.execute {
             val url = Downloads.resolveSource(item.source)
@@ -637,31 +663,144 @@ class LiveVlcActivity : AppCompatActivity() {
     /** Re-apply the carried playback state once the media is playing (idempotent per media). */
     private fun applyVodPlaybackState() {
         try { mp?.rate = vodSpeed } catch (_: Exception) {}
-        // Attach the subtitle at runtime now that audio/video output exists (once per media).
+        // libVLC resets SPU delay on new media — re-apply the user's timing shift for embedded tracks.
+        if (subSyncMs != 0L) try { mp?.setSpuDelay(-subSyncMs * 1000L) } catch (_: Exception) {}
+        // External subtitle → OUR overlay renderer (once per media). libVLC's addSlave path selects
+        // the track but never PAINTS it on Fire hardware decode ("no reference clock" breaks SPU
+        // scheduling), so we parse the SRT and draw it ourselves, synced to the player clock.
         if (vodSubPath.isNotEmpty() && !vodSubAttached) {
-            val f = java.io.File(vodSubPath)
-            if (f.exists()) {
-                try {
-                    mp?.addSlave(0 /* IMedia.Slave.Type.Subtitle */, Uri.fromFile(f), true)
-                    vodSubAttached = true
-                    // The slave track can take a moment to register (longer on the carry path where a fresh
-                    // portal link is still loading), so keep trying to select it until it sticks.
-                    for (d in longArrayOf(400, 1000, 2000, 3500, 5500)) ui.postDelayed({ selectSubtitleTrack() }, d)
-                } catch (_: Exception) {}
+            vodSubAttached = true
+            startSrtOverlay(java.io.File(vodSubPath))
+        } else if (vodSubPath.isEmpty()) {
+            // No external sub carried/saved — the subtitles the user saw in ExoPlayer were the stream's
+            // EMBEDDED track (media3 auto-selects English). VLC doesn't auto-select on Fire, so do it here.
+            for (d in longArrayOf(800, 2000, 4000)) ui.postDelayed({ selectEmbeddedEnglishTrack() }, d)
+        }
+    }
+
+    // ---- The app's own SRT overlay (external subtitles) ----
+    private var srtCues: List<SrtSubs.Cue> = emptyList()
+    private var subSyncMs = 0L    // user timing adjust: positive = show subtitles EARLIER
+    private var vlcTimeBase = 0L  // last TimeChanged position…
+    private var vlcTimeStamp = 0L // …and when it arrived (uptime) — interpolate between sparse events
+
+    /** Playback position for subtitle timing: the last TimeChanged value advanced by wall-clock,
+     *  because polling mp.time lags 1-2s behind the picture on Fire hardware decode. */
+    private fun playerTimeNow(): Long {
+        val p = mp ?: return 0L
+        return try {
+            if (p.isPlaying && vlcTimeStamp > 0)
+                vlcTimeBase + ((android.os.SystemClock.uptimeMillis() - vlcTimeStamp) * p.rate).toLong()
+            else p.time
+        } catch (_: Exception) { 0L }
+    }
+
+    private val srtTick = object : Runnable {
+        override fun run() {
+            if (srtCues.isEmpty()) return
+            val t = playerTimeNow() + subSyncMs
+            val txt = SrtSubs.cueAt(srtCues, t)?.text ?: ""
+            if (b.subtitleText.text.toString() != txt) {
+                b.subtitleText.text = txt
+                b.subtitleText.visibility = if (txt.isEmpty()) View.GONE else View.VISIBLE
+            }
+            ui.postDelayed(this, 200)
+        }
+    }
+
+    /** ⏱ fine-tune when overlay subtitles appear (compensates stream/decoder clock drift). */
+    private fun showSubSyncDialog() {
+        val opts = (-8..8).map { it * 500L } // −4s … +4s in ½s steps
+        val labels = opts.map { o ->
+            val base = when {
+                o == 0L -> "On time (default)"
+                o > 0 -> "Show %.1fs earlier".format(o / 1000f)
+                else -> "Show %.1fs later".format(-o / 1000f)
+            }
+            if (o == subSyncMs) "✔   $base" else base
+        }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this).setTitle("⏱  Subtitle timing")
+            .setItems(labels) { _, w -> setSubSync(opts[w]) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Apply a timing shift to BOTH subtitle paths: our SRT overlay (via subSyncMs, read each tick)
+     *  and libVLC's own SPU track (embedded/selected) via setSpuDelay. Positive = show EARLIER, so
+     *  VLC's delay is negated (its positive delay means later). */
+    private fun setSubSync(ms: Long) {
+        subSyncMs = ms
+        try { mp?.setSpuDelay(-ms * 1000L) } catch (_: Exception) {} // libVLC delay is in microseconds
+        android.widget.Toast.makeText(this,
+            if (ms == 0L) "Subtitle timing: on time"
+            else "Subtitle timing: %.1fs %s".format(Math.abs(ms) / 1000f, if (ms > 0) "earlier" else "later"),
+            android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startSrtOverlay(f: java.io.File) {
+        io.execute {
+            val cues = SrtSubs.parse(f)
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                srtCues = cues
+                ui.removeCallbacks(srtTick)
+                if (cues.isNotEmpty()) ui.post(srtTick)
+                else android.widget.Toast.makeText(this, "Couldn't read that subtitle file.", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    /** Turn ON the external subtitle track. libVLC's addSlave(select=true) doesn't reliably show the sub
-     *  on Fire, so we enumerate the SPU tracks and select the last real one (the slave we just added).
-     *  Idempotent + retried, because the track appears asynchronously after addSlave. */
-    private fun selectSubtitleTrack() {
+    private fun stopSrtOverlay() {
+        srtCues = emptyList()
+        ui.removeCallbacks(srtTick)
+        b.subtitleText.visibility = View.GONE
+    }
+
+    private var subUserOff = false // the user chose "Off" — never auto re-enable behind their back
+
+    /** No external subtitle for this title? Match ExoPlayer's default of auto-showing an embedded
+     *  ENGLISH text track, so switching engines doesn't silently lose the subtitles the user was
+     *  watching. Retried, because embedded tracks register asynchronously after Playing. */
+    private fun selectEmbeddedEnglishTrack() {
+        if (subUserOff) return
         val p = mp ?: return
         try {
-            val tracks = p.spuTracks
-            val target = tracks?.lastOrNull { it.id >= 0 }?.id ?: return
-            if (p.spuTrack != target) p.setSpuTrack(target)
+            if (p.spuTrack >= 0) return // something is already selected
+            val tracks = p.spuTracks?.filter { it.id >= 0 } ?: return
+            // Prefer an English track; else fall back to a closed-captions track (US TV shows carry
+            // CEA-608 CCs with no language name), else the first available — so embedded subs show
+            // automatically like Strimix's "Closed captions 1".
+            val t = tracks.firstOrNull { it.name.contains("eng", ignoreCase = true) }
+                ?: tracks.firstOrNull { it.name.contains("caption", ignoreCase = true) || it.name.contains("CC", ignoreCase = true) }
+                ?: tracks.firstOrNull()
+            if (t != null) p.setSpuTrack(t.id)
         } catch (_: Exception) {}
+    }
+
+    /** 💬 icon: the subtitle picker — Off / downloaded SRT (own overlay) / embedded tracks / search online. */
+    private fun showSubtitleMenu() {
+        val p = mp
+        val tracks = try { p?.spuTracks?.filter { it.id >= 0 } ?: emptyList() } catch (_: Exception) { emptyList() }
+        val cur = try { p?.spuTrack ?: -1 } catch (_: Exception) { -1 }
+        val overlayOn = srtCues.isNotEmpty()
+        val hasDl = vodSubPath.isNotEmpty()
+        val names = ArrayList<String>()
+        names.add(if (!overlayOn && cur < 0) "✔   Off" else "✖   Off")
+        if (hasDl) names.add((if (overlayOn) "✔   " else "💬   ") + "Downloaded subtitle")
+        val trackBase = names.size
+        for (t in tracks) names.add((if (t.id == cur) "✔   " else "💬   ") + t.name)
+        val timingIdx = if (overlayOn || cur >= 0) { names.add("⏱   Adjust timing"); names.size - 1 } else -1
+        names.add("🔍   Search online subtitles…")
+        androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Subtitles")
+            .setItems(names.toTypedArray()) { _, w ->
+                when {
+                    w == 0 -> { subUserOff = true; stopSrtOverlay(); try { p?.setSpuTrack(-1) } catch (_: Exception) {} }
+                    hasDl && w == 1 -> { subUserOff = false; startSrtOverlay(java.io.File(vodSubPath)) }
+                    w == timingIdx -> showSubSyncDialog()
+                    w == names.size - 1 -> searchSubtitles()
+                    else -> { subUserOff = false; stopSrtOverlay(); try { p?.setSpuTrack(tracks[w - trackBase].id) } catch (_: Exception) {} }
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     // ---- VOD menu parity: audio boost, subtitles, speed, report ----
@@ -706,30 +845,13 @@ class LiveVlcActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun searchQuery(): String =
-        titleText.substringBefore(" / ").substringBefore(" - ").substringBefore(" (").trim()
+    private fun searchQuery(): String = Subtitles.queryFor(titleText)
 
     private fun searchSubtitles() {
         Configs.ossKey(this).let { if (it.isNotBlank()) Subtitles.apiKey = it }
         val q = searchQuery()
         if (q.isEmpty()) return
-        val label = if (movieYear.isNotBlank()) "$q ($movieYear)" else q
-        android.widget.Toast.makeText(this, "Searching English subtitles for “$label”…", android.widget.Toast.LENGTH_SHORT).show()
-        io.execute {
-            val results = Subtitles.search(q, movieYear)
-            runOnUiThread {
-                if (results.isEmpty()) {
-                    android.widget.Toast.makeText(this, "No subtitles found for “$q”.", android.widget.Toast.LENGTH_SHORT).show()
-                    return@runOnUiThread
-                }
-                val names = results.map { it.name }.toTypedArray()
-                AlertDialog.Builder(this)
-                    .setTitle("English subtitles (${results.size})")
-                    .setItems(names) { _, which -> applySubtitle(results[which]) }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
-        }
+        SubtitleDialog.show(this, q, movieYear) { applySubtitle(it) }
     }
 
     private fun applySubtitle(sub: Subtitles.Sub) {
@@ -742,11 +864,12 @@ class LiveVlcActivity : AppCompatActivity() {
                     android.widget.Toast.makeText(this, "Couldn't download that subtitle.", android.widget.Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                // Reload the stream at the current spot with the subtitle as a media option (reliable
-                // where runtime addSlave silently fails on Fire libVLC).
+                // Save it in cache, then our own overlay renders it instantly — no stream reload needed.
+                // (Kid fork has no SubStore "saved subtitle per title" — the cached file is applied directly.)
                 vodSubPath = file.absolutePath
-                startSeekTo = mp?.time ?: 0L
-                play(currentUrl)
+                vodSubAttached = true
+                subUserOff = false
+                startSrtOverlay(java.io.File(vodSubPath))
                 android.widget.Toast.makeText(this, "Subtitle applied ✓", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
@@ -781,7 +904,7 @@ class LiveVlcActivity : AppCompatActivity() {
                 runOnUiThread {
                     autoRetrying = false
                     if (isFinishing) return@runOnUiThread
-                    if (!u.isNullOrEmpty()) { liveUrl = u; play(u) }
+                    if (!u.isNullOrEmpty()) { liveUrl = u; freshPlay(u) }
                     else if (retryCount < maxRetry) autoRetry()
                     else showPlayFailed()
                 }
@@ -838,7 +961,7 @@ class LiveVlcActivity : AppCompatActivity() {
                 if (isFinishing || channels.getOrNull(chIndex)?.id != ch.id) return@runOnUiThread
                 if (u.isNullOrEmpty()) { b.status.text = "No stream for ${ch.name}"; return@runOnUiThread }
                 liveUrl = u
-                try { play(u) } catch (e: Exception) { showPlayFailed() }
+                try { freshPlay(u) } catch (e: Exception) { showPlayFailed() }
                 loadNowNext(ch)
             }
         }
