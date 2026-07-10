@@ -8,7 +8,6 @@ import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.mykiddietv.app.databinding.ActivityKidcontentBinding
 import java.util.concurrent.Executors
 
@@ -67,7 +66,16 @@ class KidContentActivity : AppCompatActivity() {
         savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
 
         adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) })
-        b.list.layoutManager = LinearLayoutManager(this)
+        // Folder chips tile 2-4 per row (mirrors the parent-side folder grid, so a 60-folder list
+        // isn't one huge column); channel/title pick rows keep the full width for their checkbox.
+        val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+        val chipCols = (wdp / 200f).toInt().coerceIn(2, 4)
+        val total = 60 // divisible by 2/3/4 so any column count fits
+        val glm = androidx.recyclerview.widget.GridLayoutManager(this, total)
+        glm.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int) = if (adapter.isFolder(position)) total / chipCols else total
+        }
+        b.list.layoutManager = glm
         b.list.adapter = adapter
 
         b.searchBtn.setOnClickListener { toggleSearch() }

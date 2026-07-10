@@ -5,6 +5,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
+import com.mykiddietv.app.databinding.ItemCatChipBinding
 import com.mykiddietv.app.databinding.ItemCheckBinding
 
 /**
@@ -29,7 +30,7 @@ data class KidNode(
 class KidPickAdapter(
     private val isChecked: (KidNode) -> Boolean,
     private val onClick: (Int) -> Unit
-) : RecyclerView.Adapter<KidPickAdapter.VH>() {
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = ArrayList<KidNode>()
 
@@ -39,12 +40,21 @@ class KidPickAdapter(
 
     fun nodeAt(pos: Int): KidNode = items[pos]
 
+    /** Folders render as compact chips that tile 2-4 per row (parent-side look); picks stay full-width rows. */
+    fun isFolder(pos: Int): Boolean = items.getOrNull(pos)?.open != null
+
+    override fun getItemViewType(position: Int) = if (items[position].open != null) T_CHIP else T_ROW
+
     class VH(val b: ItemCheckBinding) : RecyclerView.ViewHolder(b.root)
+    class ChipVH(val b: ItemCatChipBinding) : RecyclerView.ViewHolder(b.root)
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
-        VH(ItemCheckBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder =
+        if (viewType == T_CHIP) ChipVH(ItemCatChipBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+        else VH(ItemCheckBinding.inflate(LayoutInflater.from(parent.context), parent, false))
 
-    override fun onBindViewHolder(holder: VH, position: Int) {
+    override fun onBindViewHolder(h: RecyclerView.ViewHolder, position: Int) {
+        if (h is ChipVH) { bindChip(h, items[position]); return }
+        val holder = h as VH
         val n = items[position]
         holder.b.name.text = if (n.alreadyAdded) "✓ ${n.label}" else n.label
         if (n.isPick) {
@@ -70,5 +80,15 @@ class KidPickAdapter(
         }
     }
 
+    private fun bindChip(holder: ChipVH, n: KidNode) {
+        holder.b.chipName.text = n.label
+        holder.b.chipRoot.setOnClickListener {
+            val p = holder.bindingAdapterPosition
+            if (p != RecyclerView.NO_POSITION) onClick(p)
+        }
+    }
+
     override fun getItemCount() = items.size
+
+    companion object { const val T_ROW = 0; const val T_CHIP = 1 }
 }
