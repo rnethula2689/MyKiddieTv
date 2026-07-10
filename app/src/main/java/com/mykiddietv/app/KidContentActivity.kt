@@ -65,7 +65,7 @@ class KidContentActivity : AppCompatActivity() {
         savedVodIds = Profiles.allowedVodIds(this)
         savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
 
-        adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) })
+        adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) }, { pos -> onRowLongClick(pos) })
         // Folder chips tile 2-4 per row (mirrors the parent-side folder grid, so a 60-folder list
         // isn't one huge column); channel/title pick rows keep the full width for their checkbox.
         val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
@@ -149,6 +149,44 @@ class KidContentActivity : AppCompatActivity() {
         if (currentManage != null) toggleRemove(n) else toggle(n)
         adapter.notifyItemChanged(pos)
         updateBottomBar()
+    }
+
+    /**
+     * Long-press a row. In the approved-movies/shows review screen (currentManage == "vod") this offers a
+     * one-item "Download for offline" for that node's movie or episode. Elsewhere it does nothing.
+     */
+    private fun onRowLongClick(pos: Int) {
+        if (currentManage != "vod") return
+        val n = adapter.nodeAt(pos)
+        val v = n.vod
+        val e = n.episode
+        if (v == null && e == null) return
+        val name = v?.name ?: e?.let { "${it.seriesName} — ${it.name}" } ?: return
+        AlertDialog.Builder(this)
+            .setTitle("📥 Download for offline?")
+            .setMessage("Download “$name” for ${Profiles.kidName(this)} to watch offline?")
+            .setPositiveButton("Yes, download") { _, _ -> downloadApproved(v, e) }
+            .setNegativeButton("Go back", null)
+            .show()
+    }
+
+    /** Enqueue one approved movie or episode per the download contract (reuses commitDownloads' exact builds). */
+    private fun downloadApproved(v: Portal.VodItem?, e: Profiles.KidEpisode?) {
+        when {
+            v != null -> {
+                if (Downloads.has(applicationContext, v.id)) { b.status.text = "“${v.name}” is already downloaded."; return }
+                Downloads.enqueue(applicationContext, v.id, v.name, v.posterUrl, "vod|${v.id}|${v.cmd}")
+                Profiles.addKidDownload(applicationContext, v.id)
+                b.status.text = "Started download of “${v.name}” — see Approved Content → Downloads."
+            }
+            e != null -> {
+                if (Downloads.has(applicationContext, e.key)) { b.status.text = "“${e.name}” is already downloaded."; return }
+                val title = "${e.seriesName} ⟫ ${e.seasonName.ifBlank { "Season" }} ⟫ ${e.name}"
+                Downloads.enqueue(applicationContext, e.key, title, e.poster, e.source)
+                Profiles.addKidDownload(applicationContext, e.key)
+                b.status.text = "Started download of “${e.name}” — see Approved Content → Downloads."
+            }
+        }
     }
 
     private fun pendingCount() = pendingChannels.size + pendingVod.size + pendingEpisodes.size

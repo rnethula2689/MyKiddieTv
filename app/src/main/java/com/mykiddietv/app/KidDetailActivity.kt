@@ -44,6 +44,8 @@ class KidDetailActivity : AppCompatActivity() {
 
     // Series-only UI + state.
     private var seasonBtn: Button? = null
+    private var downloadSeasonBtn: Button? = null
+    private var downloadShowBtn: Button? = null
     private var episodesBox: LinearLayout? = null
     private var seasons: List<Portal.Season> = emptyList()
     private var curSeason: Portal.Season? = null
@@ -115,6 +117,19 @@ class KidDetailActivity : AppCompatActivity() {
         }
         col.addView(play)
 
+        // ---- Download (movie mode only) ----
+        if (!isSeries) {
+            val dl = Button(this).apply {
+                text = "📥  Download"; textSize = 16f; setTextColor(0xFFE6EDF3.toInt())
+                background = GradientDrawable().apply { cornerRadius = dp(26).toFloat(); setColor(0x333DA5FF) }
+                setPadding(dp(34), dp(12), dp(34), dp(12))
+                isAllCaps = false
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) }
+                setOnClickListener { downloadMovie() }
+            }
+            col.addView(dl)
+        }
+
         // ---- Trailer (YOUNGER+) ----
         trailerBtn = Button(this).apply {
             text = "🎬  Watch trailer"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
@@ -141,6 +156,28 @@ class KidDetailActivity : AppCompatActivity() {
                 setOnClickListener { pickSeason() }
             }
             col.addView(seasonBtn)
+
+            downloadSeasonBtn = Button(this).apply {
+                text = "📥  Download this season"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
+                background = GradientDrawable().apply { cornerRadius = dp(24).toFloat(); setColor(0x333DA5FF) }
+                setPadding(dp(28), dp(10), dp(28), dp(10))
+                isAllCaps = false
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12) }
+                setOnClickListener { curSeason?.let { confirmDownloadSeason(it) } }
+            }
+            col.addView(downloadSeasonBtn)
+
+            downloadShowBtn = Button(this).apply {
+                text = "📥  Download whole show"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
+                background = GradientDrawable().apply { cornerRadius = dp(24).toFloat(); setColor(0x333DA5FF) }
+                setPadding(dp(28), dp(10), dp(28), dp(10))
+                isAllCaps = false
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) }
+                setOnClickListener { confirmDownloadWholeShow() }
+            }
+            col.addView(downloadShowBtn)
 
             episodesBox = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -225,6 +262,8 @@ class KidDetailActivity : AppCompatActivity() {
                 seasons = ss
                 if (ss.isEmpty()) return@runOnUiThread
                 seasonBtn?.visibility = View.VISIBLE
+                downloadSeasonBtn?.visibility = View.VISIBLE
+                downloadShowBtn?.visibility = View.VISIBLE
                 selectSeason(ss.first())
             }
         }
@@ -256,15 +295,88 @@ class KidDetailActivity : AppCompatActivity() {
         box.removeAllViews()
         for (e in eps) {
             val row = Button(this).apply {
-                text = "▶  ${e.name}"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
+                text = "▶  ${e.name}    📥"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
                 background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0x22FFFFFF) }
                 setPadding(dp(20), dp(12), dp(20), dp(12))
                 isAllCaps = false
                 layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
                 setOnClickListener { playEpisode(s, e) }
+                setOnLongClickListener { downloadEpisode(s, e); true }
             }
             box.addView(row)
+        }
+    }
+
+    // ---- downloads ----
+    /** Enqueue this movie for offline (movie mode). Matches the download contract used by KidContentActivity. */
+    private fun downloadMovie() {
+        if (vodId.isBlank()) { toast("Can't download this yet."); return }
+        if (Downloads.has(applicationContext, vodId)) { toast("Already downloaded."); return }
+        Downloads.enqueue(applicationContext, vodId, title, poster, "vod|$vodId|$cmd")
+        Profiles.addKidDownload(applicationContext, vodId)
+        toast("Downloading “$title” — see Downloaded Movies & Shows.")
+    }
+
+    /** Enqueue a single episode per the contract (key/title use the ⟫-separated hierarchy). Returns true if newly queued. */
+    private fun enqueueEpisode(s: Portal.Season, e: Portal.Episode): Boolean {
+        val key = "$vodId|${s.id}|${e.id}"
+        if (Downloads.has(applicationContext, key)) return false
+        val seasonName = s.name.ifBlank { "Season" }
+        val epTitle = "$title ⟫ $seasonName ⟫ ${e.name}"
+        Downloads.enqueue(applicationContext, key, epTitle, poster, "ep|$vodId|${s.id}|${e.id}")
+        Profiles.addKidDownload(applicationContext, key)
+        return true
+    }
+
+    /** Single-episode download (long-press an episode row). */
+    private fun downloadEpisode(s: Portal.Season, e: Portal.Episode) {
+        if (enqueueEpisode(s, e)) toast("Downloading “${e.name}” — see Downloaded Movies & Shows.")
+        else toast("Already downloaded.")
+    }
+
+    /** Confirm + download every episode of one season (uses the currently-loaded episode list when it matches). */
+    private fun confirmDownloadSeason(s: Portal.Season) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Download season")
+            .setMessage("Download all episodes of “${s.name}” from “$title” for ${Profiles.kidName(this)}?")
+            .setPositiveButton("Yes, download") { _, _ -> startSeasonDownload(s) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun startSeasonDownload(s: Portal.Season) {
+        toast("Getting “${s.name}” ready to download…")
+        io.execute {
+            val eps = Portal.seriesEpisodes(vodId, s.id)
+            var started = 0
+            for (e in eps) if (enqueueEpisode(s, e)) started++
+            val n = started
+            runOnUiThread { toast("Downloading $n episode(s) — see Downloaded Movies & Shows.") }
+        }
+    }
+
+    /** Confirm + download every episode of every season of the show. */
+    private fun confirmDownloadWholeShow() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Download whole show")
+            .setMessage("Download every episode of “$title” for ${Profiles.kidName(this)}?")
+            .setPositiveButton("Yes, download") { _, _ -> startWholeShowDownload() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun startWholeShowDownload() {
+        toast("Getting “$title” ready to download…")
+        io.execute {
+            val ss = if (seasons.isNotEmpty()) seasons else Portal.seriesSeasons(vodId)
+            var started = 0
+            for (s in ss) {
+                val eps = Portal.seriesEpisodes(vodId, s.id)
+                for (e in eps) if (enqueueEpisode(s, e)) started++
+            }
+            val n = started
+            runOnUiThread { toast("Downloading $n episode(s) — see Downloaded Movies & Shows.") }
         }
     }
 

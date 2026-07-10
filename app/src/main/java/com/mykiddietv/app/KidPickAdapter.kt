@@ -29,7 +29,8 @@ data class KidNode(
 
 class KidPickAdapter(
     private val isChecked: (KidNode) -> Boolean,
-    private val onClick: (Int) -> Unit
+    private val onClick: (Int) -> Unit,
+    private val onLongClick: ((Int) -> Unit)? = null
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val items = ArrayList<KidNode>()
@@ -78,6 +79,11 @@ class KidPickAdapter(
             val p = holder.bindingAdapterPosition
             if (p != RecyclerView.NO_POSITION) onClick(p)
         }
+        holder.b.root.setOnLongClickListener {
+            val p = holder.bindingAdapterPosition
+            if (p != RecyclerView.NO_POSITION) onLongClick?.invoke(p)
+            true
+        }
     }
 
     private fun bindChip(holder: ChipVH, n: KidNode) {
@@ -85,6 +91,11 @@ class KidPickAdapter(
         holder.b.chipRoot.setOnClickListener {
             val p = holder.bindingAdapterPosition
             if (p != RecyclerView.NO_POSITION) onClick(p)
+        }
+        holder.b.chipRoot.setOnLongClickListener {
+            val p = holder.bindingAdapterPosition
+            if (p != RecyclerView.NO_POSITION) onLongClick?.invoke(p)
+            true
         }
     }
 

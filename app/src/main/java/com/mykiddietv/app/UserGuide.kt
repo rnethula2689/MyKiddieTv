@@ -153,6 +153,16 @@ landscape automatically.
 From a title's options choose Download; play finished items from Downloads
 even without internet.
 
+Parents — download an already-approved title without re-searching: open
+Manage Kid Content > Approved Content > Approved Movies & Shows, then LONG-PRESS
+a movie or episode and confirm "Download for offline".
+
+Full-access kids can download from their own approved folders: on a movie's
+screen tap "📥 Download"; on a series screen LONG-PRESS an episode to grab just
+that one, or use "📥 Download this season" / "📥 Download whole show". Everything
+lands in the child's "Downloaded Movies & Shows", grouped as Series > Season >
+Episode.
+
 
 13. RECORDINGS
 --------------
