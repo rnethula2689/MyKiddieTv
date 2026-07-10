@@ -69,6 +69,8 @@ Full-access child (management OFF) — choose their FOLDERS:
   Open the same Manage Kid Content and pick that child (or long-press their
   tile > "Choose allowed folders"). Tick which Live TV genres and Movie
   categories they may browse; untick adult folders to hide them.
+  In the kid's home, Live TV then opens as tidy FOLDERS — "All Channels"
+  plus one folder per allowed genre — instead of one long channel list.
 (To change a child's PICTURE, long-press their tile > Edit — see section 7.)
 
 

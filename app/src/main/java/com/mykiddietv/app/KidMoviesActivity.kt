@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.mykiddietv.app.databinding.ActivityKidmoviesBinding
 import java.util.concurrent.Executors
 
@@ -39,7 +38,23 @@ class KidMoviesActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityKidmoviesBinding.inflate(layoutInflater)
         setContentView(b.root)
-        b.list.layoutManager = LinearLayoutManager(this)
+        // One grid for everything (mirrors the parent side): folder chips tile in columns, movie
+        // posters tile in columns, and normal rows (Load more, home entries) span the full width.
+        val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+        val chipCols = (wdp / 200f).toInt().coerceIn(2, 4)
+        val posterCols = if (wdp >= 900) 6 else if (wdp >= 600) 5 else 3
+        val total = 60
+        val chipSpan = total / chipCols
+        val posterSpan = total / posterCols
+        val glm = androidx.recyclerview.widget.GridLayoutManager(this, total)
+        glm.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int) = when {
+                adapter.isChip(position) -> chipSpan
+                adapter.isPoster(position) -> posterSpan
+                else -> total
+            }
+        }
+        b.list.layoutManager = glm
         b.list.adapter = adapter
         b.searchBtn.setOnClickListener { toggleSearch() }
         b.sortBtn.setOnClickListener { cycleSort() }
@@ -105,8 +120,8 @@ class KidMoviesActivity : AppCompatActivity() {
         setTools(search = false, category = false)
         b.status.visibility = View.GONE
         adapter.submit(listOf(
-            ChannelsActivity.Row("📺  Live Movies & Shows", null, "") { showStreaming() },
-            ChannelsActivity.Row("⬇  Downloaded Movies & Shows", null, "") {
+            ChannelsActivity.Row("📺  Live Movies & Shows", null, "", chip = true) { showStreaming() },
+            ChannelsActivity.Row("⬇  Downloaded Movies & Shows", null, "", chip = true) {
                 OfflineActivity.kidMode = true
                 startActivity(Intent(this, OfflineActivity::class.java))
             }
@@ -123,11 +138,11 @@ class KidMoviesActivity : AppCompatActivity() {
         val bySeries = Profiles.allowedEpisodes(this).groupBy { it.seriesId }
         val rows = ArrayList<ChannelsActivity.Row>()
         movies.forEach { v ->
-            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
+            rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) })
         }
         bySeries.forEach { (sid, eps) ->
             val name = eps.first().seriesName
-            rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name) { showEpisodes(sid) })
+            rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name, chip = true) { showEpisodes(sid) })
         }
         rows.sortBy { it.sortKey.lowercase() }
         streamingRows = rows
@@ -168,7 +183,7 @@ class KidMoviesActivity : AppCompatActivity() {
                 val visible = cats.filter { Profiles.vodFolderAllowed(this, it.id) } // only this kid's allowed folders
                 b.status.visibility = if (visible.isEmpty()) View.VISIBLE else View.GONE
                 if (visible.isEmpty()) b.status.text = "Nothing to show right now."
-                adapter.submit(visible.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title) { showAutoCategory(c) } })
+                adapter.submit(visible.map { c -> ChannelsActivity.Row("📁  ${c.title}", null, c.title, chip = true) { showAutoCategory(c) } })
                 b.list.scrollToPosition(0)
             }
         }
@@ -194,8 +209,8 @@ class KidMoviesActivity : AppCompatActivity() {
     private fun autoRows(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<ChannelsActivity.Row> {
         val rows = ArrayList<ChannelsActivity.Row>()
         for (v in acc) {
-            if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) })
-            else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) })
+            if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name, chip = true) { showAutoSeasons(v) })
+            else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) })
         }
         if (loaded < total) rows.add(ChannelsActivity.Row("⬇  Load more", null, "zzzzz") {
             b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
@@ -220,7 +235,7 @@ class KidMoviesActivity : AppCompatActivity() {
                 b.status.visibility = if (seasons.isEmpty()) View.VISIBLE else View.GONE
                 if (seasons.isEmpty()) { b.status.text = "No episodes yet."; return@runOnUiThread }
                 adapter.submit(seasons.reversed().map { s ->
-                    ChannelsActivity.Row("📁  ${s.name}", null, s.name) { showAutoEpisodes(series, s) }
+                    ChannelsActivity.Row("📁  ${s.name}", null, s.name, chip = true) { showAutoEpisodes(series, s) }
                 })
                 b.list.scrollToPosition(0)
             }
@@ -238,7 +253,7 @@ class KidMoviesActivity : AppCompatActivity() {
                 b.status.visibility = if (eps.isEmpty()) View.VISIBLE else View.GONE
                 if (eps.isEmpty()) { b.status.text = "No episodes."; return@runOnUiThread }
                 adapter.submit(eps.reversed().map { e ->
-                    ChannelsActivity.Row("🎬  ${e.name}", series.posterUrl, e.name) {
+                    ChannelsActivity.Row("🎬  ${e.name}", series.posterUrl, e.name, poster = true) {
                         play("${series.name} — ${e.name}") { Portal.playEpisodeUrl(series.id, season.id, e.id) }
                     }
                 })
@@ -255,7 +270,7 @@ class KidMoviesActivity : AppCompatActivity() {
         setTools(search = false, category = false)
         b.status.visibility = View.GONE
         adapter.submit(eps.map { ep ->
-            ChannelsActivity.Row("🎬  ${ep.name}", ep.poster, ep.name) { playEpisode(ep) }
+            ChannelsActivity.Row("🎬  ${ep.name}", ep.poster, ep.name, poster = true) { playEpisode(ep) }
         })
         b.list.scrollToPosition(0)
     }
@@ -309,8 +324,8 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     private fun movieRow(v: Portal.VodItem) =
-        if (v.isSeries) ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name) { showAutoSeasons(v) }
-        else ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name) { openMovie(v) }
+        if (v.isSeries) ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name, chip = true) { showAutoSeasons(v) }
+        else ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) }
 
     /** Search movies/shows. All folders → global (index + every portal page); restricted → only the
      *  kid's allowed folders (so hidden adult folders never surface in results). */

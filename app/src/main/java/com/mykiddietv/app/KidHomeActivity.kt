@@ -86,15 +86,20 @@ class KidHomeActivity : AppCompatActivity() {
     }
 
     private fun openLive() {
-        val manage = Profiles.activeManageContent(this)
-        val channels = if (manage) Profiles.allowedChannels(this)
-            else allChannels.filter { Profiles.liveFolderAllowed(this, it.genreId) }
-        if (channels.isEmpty()) {
-            Toast.makeText(this, if (manage) "No channels yet — ask a grown-up." else "No channels available.", Toast.LENGTH_SHORT).show()
-            return
-        }
         if (!connected) {
             Toast.makeText(this, "Still getting ready…", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val manage = Profiles.activeManageContent(this)
+        if (!manage) {
+            // Full-access kid: show a folder chooser (All Channels + one folder per allowed genre).
+            startActivity(Intent(this, KidLiveActivity::class.java))
+            return
+        }
+        // Content-managed kid: keep the flat, hand-picked list.
+        val channels = Profiles.allowedChannels(this)
+        if (channels.isEmpty()) {
+            Toast.makeText(this, "No channels yet — ask a grown-up.", Toast.LENGTH_SHORT).show()
             return
         }
         LiveGridActivity.channels = channels
