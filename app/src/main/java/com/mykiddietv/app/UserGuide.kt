@@ -153,10 +153,8 @@ Live recordings (where supported) are listed under Recordings — select to
 play or remove.
 
 
-14. CASTING & SUBTITLES
------------------------
-  - Cast to TV (player menu) sends the stream to a DLNA/Chromecast device on
-    your network. (Not available on Fire OS devices.)
+14. SUBTITLES
+-------------
   - Subtitles (movie player menu) opens a search: the movie's title is
     pre-filled (edit it if needed), pick a LANGUAGE from the dropdown
     (remembered for next time) and press Search. Each result shows its
