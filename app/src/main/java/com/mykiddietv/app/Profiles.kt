@@ -201,6 +201,10 @@ object Profiles {
     // ---- parent name + passcode (global) ----
     fun parentName(ctx: Context): String = prefs(ctx).getString("parentName", "")?.ifBlank { "Parent" } ?: "Parent"
 
+    /** Parent tile picture on "Who's watching?" — "" = default 👤, or "emoji:X" / "file:/path". */
+    fun parentAvatar(ctx: Context): String = prefs(ctx).getString("parentAvatar", "") ?: ""
+    fun setParentAvatar(ctx: Context, v: String) { prefs(ctx).edit().putString("parentAvatar", v).apply() }
+
     fun setNames(ctx: Context, parent: String, kid: String) {
         prefs(ctx).edit().putString("parentName", parent.trim()).apply()
         // Legacy Settings dialog: rename the active kid too (kid names are per-kid now).

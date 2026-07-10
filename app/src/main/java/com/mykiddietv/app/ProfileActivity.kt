@@ -29,6 +29,23 @@ class ProfileActivity : AppCompatActivity() {
 
     private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
+    // ---- parent-tile picture pickers (long-press the Parent tile, passcode-gated) ----
+    private var pendingCameraPath: String? = null
+    private val parentGallery = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val a = Avatars.importFrom(this, uri)
+            if (a != null) { Profiles.setParentAvatar(this, a); buildTiles() } else toast("Couldn't load that image.")
+        }
+    }
+    private val parentPhoto = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { ok ->
+        val p = pendingCameraPath
+        if (ok && p != null) { Profiles.setParentAvatar(this, Avatars.shrinkFile(this, p) ?: "file:$p"); buildTiles() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityProfilesBinding.inflate(layoutInflater)
@@ -141,11 +158,67 @@ class ProfileActivity : AppCompatActivity() {
 
     private fun parentTile(): View {
         val t = tileFrame()
-        t.addView(iconView(60f).apply { text = "👤" })
+        val avatar = iconView(60f)
+        val pa = Profiles.parentAvatar(this)
+        val initial = Profiles.parentName(this).trim().firstOrNull()?.uppercaseChar()?.toString() ?: "P"
+        if (pa.isBlank()) avatar.text = "👤" else Avatars.render(avatar, pa, 0xFF4F8CFF.toInt(), initial, false)
+        if (pa.startsWith("emoji:")) avatar.textSize = 56f
+        t.addView(avatar)
         t.addView(label(Profiles.parentName(this), 20f, 0xFFE6EDF3.toInt(), true, 8))
         t.addView(label("🔒 passcode", 13f, 0xFF8B97A5.toInt()))
+        // Tap → passcode → parent mode. Long-press → passcode → change the tile's picture.
         t.setOnClickListener { openParent() }
+        t.setOnLongClickListener { ensureParent { parentPictureMenu() }; true }
         return t
+    }
+
+    /** Parent-tile picture options (passcode already verified by the long-press gate). */
+    private fun parentPictureMenu() {
+        AlertDialog.Builder(this)
+            .setTitle("Parent picture")
+            .setItems(arrayOf("📷  Take a photo", "🖼  Choose from gallery", "😀  Pick a fun icon", "👤  Default")) { _, w ->
+                when (w) {
+                    0 -> launchParentCamera()
+                    1 -> parentGallery.launch("image/*")
+                    2 -> parentEmojiPicker()
+                    3 -> { Profiles.setParentAvatar(this, ""); buildTiles() }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun launchParentCamera() {
+        try {
+            val dir = java.io.File(getExternalFilesDir(null), "avatars").apply { mkdirs() }
+            val f = java.io.File(dir, "parent_${System.currentTimeMillis()}.jpg")
+            pendingCameraPath = f.absolutePath
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
+            parentPhoto.launch(uri)
+        } catch (e: Exception) { toast("Camera not available: ${e.message}") }
+    }
+
+    private fun parentEmojiPicker() {
+        val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(8), dp(16), dp(8)) }
+        var dlg: AlertDialog? = null
+        var row: LinearLayout? = null
+        val options = listOf("") + Avatars.EMOJI.map { "emoji:$it" }
+        options.forEachIndexed { i, v ->
+            if (i % 6 == 0) { row = LinearLayout(this); grid.addView(row) }
+            row!!.addView(TextView(this).apply {
+                text = if (v.isEmpty()) "👤" else v.removePrefix("emoji:")
+                textSize = 32f; gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
+                isFocusable = true; isClickable = true
+                background = androidx.core.content.ContextCompat.getDrawable(this@ProfileActivity, R.drawable.item_bg)
+                setOnClickListener { Profiles.setParentAvatar(this@ProfileActivity, v); dlg?.dismiss(); buildTiles() }
+            })
+        }
+        dlg = AlertDialog.Builder(this)
+            .setTitle("Pick an icon")
+            .setView(android.widget.ScrollView(this).apply { addView(grid) })
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---- per-kid management (long-press) ----

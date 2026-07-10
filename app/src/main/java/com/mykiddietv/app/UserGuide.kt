@@ -101,6 +101,11 @@ set) for a menu:
   - "Delete" — remove the profile.
 On a remote, hold the OK/centre button on the tile.
 
+The PARENT tile can have a picture too: press and hold it (passcode), then
+take a photo, choose from the gallery, pick a fun icon, or return to the
+default silhouette. A single tap still asks for the passcode and opens
+parent mode as usual.
+
 In the kid home, children see big, simple tiles. A managed child sees ONLY
 what you approved, with no way to wander outside it; a child with content
 management OFF can browse the full catalogue.
