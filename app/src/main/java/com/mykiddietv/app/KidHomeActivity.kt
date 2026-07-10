@@ -93,6 +93,8 @@ class KidHomeActivity : AppCompatActivity() {
         val manage = Profiles.activeManageContent(this)
         if (!manage) {
             // Full-access kid: show a folder chooser (All Channels + one folder per allowed genre).
+            // Hand over the catalogue we already fetched so Live TV opens instantly (no refetch).
+            KidLiveActivity.preChannels = allChannels
             startActivity(Intent(this, KidLiveActivity::class.java))
             return
         }

@@ -22,14 +22,15 @@ class KidMoviesActivity : AppCompatActivity() {
     private var inStreaming = false        // in the "Live Movies & Shows" list (or deeper)
     private var inSeries: String? = null   // non-null = viewing a series' episodes
     private var streamingRows: List<ChannelsActivity.Row> = emptyList()
-    // Full-catalogue browse (manageContent = false): current category / series being viewed.
+    // Full-catalogue browse (manageContent = false): current category being viewed. (Series now open
+    // their own rich detail screen [KidDetailActivity], so no season/episode state lives here.)
     private var autoCat: Portal.VodCat? = null
-    private var autoSeries: Portal.VodItem? = null
-    private var autoInEpisodes = false
     // Full-catalogue browse controls (search / A–Z / sort).
     private var searchSeq = 0
     private var pendingSearch: Runnable? = null
     private var autoSortAdded = true       // true = recently added (default), false = A–Z by name
+    // Bumped on any navigation so a stale progressive page-load can't append into the wrong screen.
+    private var autoLoadSeq = 0
 
     /** false = kid browses the whole catalogue; true = only the parent-approved whitelist. */
     private fun manageContent(): Boolean = Profiles.activeManageContent(this)
@@ -115,7 +116,7 @@ class KidMoviesActivity : AppCompatActivity() {
 
     private fun showHome() {
         inStreaming = false; inSeries = null
-        autoCat = null; autoSeries = null
+        autoCat = null; ++autoLoadSeq
         b.title.text = "Movies & Shows"
         setTools(search = false, category = false)
         b.status.visibility = View.GONE
@@ -142,7 +143,8 @@ class KidMoviesActivity : AppCompatActivity() {
         }
         bySeries.forEach { (sid, eps) ->
             val name = eps.first().seriesName
-            rows.add(ChannelsActivity.Row("📁  $name  (${eps.size})", eps.first().poster, name, chip = true) { showEpisodes(sid) })
+            // Curated subset of approved episodes (not a full series) → poster art, opens the episode list.
+            rows.add(ChannelsActivity.Row(name, eps.first().poster, name, poster = true) { showEpisodes(sid) })
         }
         rows.sortBy { it.sortKey.lowercase() }
         streamingRows = rows
@@ -171,9 +173,17 @@ class KidMoviesActivity : AppCompatActivity() {
             .putExtra("title", v.name).putExtra("poster", v.posterUrl))
     }
 
+    /** Full-access series → rich kid detail screen (TMDb overview/rating/trailer + season/episode list). */
+    private fun openSeries(v: Portal.VodItem) {
+        startActivity(Intent(this, KidDetailActivity::class.java)
+            .putExtra("isSeries", true)
+            .putExtra("vodId", v.id).putExtra("cmd", v.cmd)
+            .putExtra("title", v.name).putExtra("poster", v.posterUrl))
+    }
+
     // ---- Auto mode: browse the whole catalog, filtered to the kid's age cap ----
     private fun showAutoCategories() {
-        autoCat = null; autoSeries = null; autoInEpisodes = false
+        autoCat = null; ++autoLoadSeq
         b.title.text = "Movies & Shows"
         setTools(search = true, category = false)   // global search across the kid's allowed folders
         b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
@@ -190,77 +200,44 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     private fun showAutoCategory(cat: Portal.VodCat) {
-        autoCat = cat; autoSeries = null; autoInEpisodes = false
+        autoCat = cat
+        val seq = ++autoLoadSeq   // any navigation here supersedes an in-flight progressive load
         setTools(search = true, category = true)   // search + ⇅ sort + A–Z
         b.title.text = cat.title
         b.status.visibility = View.VISIBLE; b.status.text = "Loading ${cat.title}…"
         io.execute {
+            // Page 1 renders immediately; remaining pages are appended as they arrive (like Vibe's
+            // loadVodAll) — no "Load more" row. The io executor is single-threaded, so these page
+            // fetches run sequentially after page 1's UI post; the seq guard drops stale appends.
             val (items, pages) = Portal.vodList(cat.id, 1, autoSort())
-            val rows = autoRows(cat, ArrayList(items), 1, pages)
             runOnUiThread {
-                b.status.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
-                if (rows.isEmpty()) b.status.text = "Nothing here yet."
-                adapter.submit(rows); b.list.scrollToPosition(0)
+                if (seq != autoLoadSeq) return@runOnUiThread
+                b.status.visibility = if (items.isEmpty() && pages <= 1) View.VISIBLE else View.GONE
+                if (items.isEmpty() && pages <= 1) b.status.text = "Nothing here yet."
+                adapter.submit(autoRows(items)); b.list.scrollToPosition(0)
+                if (pages > 1) { b.status.visibility = View.VISIBLE; b.status.text = "Loading more…" }
+            }
+            if (pages <= 1) return@execute
+            val last = pages.coerceAtMost(1000)   // runaway guard
+            for (p in 2..last) {
+                if (seq != autoLoadSeq) return@execute   // user navigated away → stop fetching
+                val (more, _) = Portal.vodList(cat.id, p, autoSort())
+                runOnUiThread {
+                    if (seq != autoLoadSeq) return@runOnUiThread
+                    adapter.append(autoRows(more))
+                    if (p >= last) b.status.visibility = View.GONE
+                }
             }
         }
     }
 
-    /** Build rows for a category page (whole catalogue — this kid is not content-managed). */
-    private fun autoRows(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<ChannelsActivity.Row> {
-        val rows = ArrayList<ChannelsActivity.Row>()
-        for (v in acc) {
-            if (v.isSeries) rows.add(ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name, chip = true) { showAutoSeasons(v) })
-            else rows.add(ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) })
+    /** Build rows for a batch of catalogue items (whole catalogue — this kid is not content-managed).
+     *  Movies + series both tile as posters (with art); tapping a series opens its rich detail screen. */
+    private fun autoRows(items: List<Portal.VodItem>): List<ChannelsActivity.Row> =
+        items.map { v ->
+            if (v.isSeries) ChannelsActivity.Row(v.name, v.posterUrl, v.name, poster = true) { openSeries(v) }
+            else ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) }
         }
-        if (loaded < total) rows.add(ChannelsActivity.Row("⬇  Load more", null, "zzzzz") {
-            b.status.visibility = View.VISIBLE; b.status.text = "Loading…"
-            io.execute {
-                val (more, _) = Portal.vodList(cat.id, loaded + 1, autoSort())
-                acc.addAll(more)
-                val rows2 = autoRows(cat, acc, loaded + 1, total)
-                runOnUiThread { b.status.visibility = View.GONE; adapter.submit(rows2) }
-            }
-        })
-        return rows
-    }
-
-    private fun showAutoSeasons(series: Portal.VodItem) {
-        autoSeries = series; autoInEpisodes = false
-        setTools(search = false, category = false)
-        b.title.text = series.name
-        b.status.visibility = View.VISIBLE; b.status.text = "Loading ${series.name}…"
-        io.execute {
-            val seasons = Portal.seriesSeasons(series.id)
-            runOnUiThread {
-                b.status.visibility = if (seasons.isEmpty()) View.VISIBLE else View.GONE
-                if (seasons.isEmpty()) { b.status.text = "No episodes yet."; return@runOnUiThread }
-                adapter.submit(seasons.reversed().map { s ->
-                    ChannelsActivity.Row("📁  ${s.name}", null, s.name, chip = true) { showAutoEpisodes(series, s) }
-                })
-                b.list.scrollToPosition(0)
-            }
-        }
-    }
-
-    private fun showAutoEpisodes(series: Portal.VodItem, season: Portal.Season) {
-        autoInEpisodes = true
-        setTools(search = false, category = false)
-        b.title.text = "${series.name} — ${season.name}"
-        b.status.visibility = View.VISIBLE; b.status.text = "Loading ${season.name}…"
-        io.execute {
-            val eps = Portal.seriesEpisodes(series.id, season.id)
-            runOnUiThread {
-                b.status.visibility = if (eps.isEmpty()) View.VISIBLE else View.GONE
-                if (eps.isEmpty()) { b.status.text = "No episodes."; return@runOnUiThread }
-                adapter.submit(eps.reversed().map { e ->
-                    ChannelsActivity.Row("🎬  ${e.name}", series.posterUrl, e.name, poster = true) {
-                        play("${series.name} — ${e.name}") { Portal.playEpisodeUrl(series.id, season.id, e.id) }
-                    }
-                })
-                b.list.scrollToPosition(0)
-            }
-        }
-    }
 
     private fun showEpisodes(seriesId: String) {
         val eps = Profiles.allowedEpisodes(this).filter { it.seriesId == seriesId }
@@ -305,8 +282,6 @@ class KidMoviesActivity : AppCompatActivity() {
         // An open search closes first; then the normal drill-up.
         if (b.search.visibility == View.VISIBLE) { b.search.setText(""); b.search.visibility = View.GONE; return }
         when {
-            autoInEpisodes -> { val s = autoSeries; if (s != null) showAutoSeasons(s) else showAutoCategories() }
-            autoSeries != null -> { val c = autoCat; if (c != null) showAutoCategory(c) else showAutoCategories() }
             autoCat != null -> showAutoCategories()
             inSeries != null -> showStreaming()
             inStreaming -> showHome()
@@ -324,7 +299,7 @@ class KidMoviesActivity : AppCompatActivity() {
     }
 
     private fun movieRow(v: Portal.VodItem) =
-        if (v.isSeries) ChannelsActivity.Row("📁  ${v.name}", v.posterUrl, v.name, chip = true) { showAutoSeasons(v) }
+        if (v.isSeries) ChannelsActivity.Row(v.name, v.posterUrl, v.name, poster = true) { openSeries(v) }
         else ChannelsActivity.Row("🎬  ${v.name}", v.posterUrl, v.name, poster = true) { openMovie(v) }
 
     /** Search movies/shows. All folders → global (index + every portal page); restricted → only the
@@ -333,6 +308,7 @@ class KidMoviesActivity : AppCompatActivity() {
         pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
         if (query.isEmpty()) { autoCat?.let { showAutoCategory(it) } ?: showAutoCategories(); return }
         if (query.length < 2) return
+        ++autoLoadSeq   // stop any in-flight category page-load appending under the search results
         b.azScroll.visibility = View.GONE
         b.status.visibility = View.VISIBLE; b.status.text = "Searching…"
         val seq = searchSeq
@@ -378,6 +354,7 @@ class KidMoviesActivity : AppCompatActivity() {
         val cat = autoCat ?: return
         if (b.search.text.isNotEmpty()) b.search.setText("")
         if (letter == null) { showAutoCategory(cat); return }
+        ++autoLoadSeq   // stop any in-flight category page-load appending under the letter view
         b.status.visibility = View.VISIBLE; b.status.text = "Loading “$letter”…"
         val seq = ++searchSeq
         io.execute {

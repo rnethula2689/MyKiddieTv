@@ -17,6 +17,11 @@ import java.util.concurrent.Executors
  * Content-managed kids never reach here — they keep the flat list from [KidHomeActivity].
  */
 class KidLiveActivity : AppCompatActivity() {
+    companion object {
+        /** Channels the kid home already fetched (full-access kid) — reuse instead of refetching. */
+        var preChannels: List<Portal.Channel> = emptyList()
+    }
+
     private val io = Executors.newSingleThreadExecutor()
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var b: ActivityKidmoviesBinding
@@ -77,6 +82,19 @@ class KidLiveActivity : AppCompatActivity() {
         Portal.portalUrl = acct.portal
         Portal.mac = acct.mac
         Portal.sn = acct.sn
+
+        // Reuse the catalogue the kid home already loaded (full-access kid) — skip the slow refetch.
+        val pre = preChannels
+        preChannels = emptyList() // consume once; a fresh open re-supplies it from the home screen
+        if (pre.isNotEmpty()) {
+            connected = true
+            io.execute {
+                val genres = Portal.liveGenres() // small/fast; connection is already warm from home
+                runOnUiThread { showFolders(pre, genres) }
+            }
+            return
+        }
+
         io.execute {
             val err = Portal.connect()
             val channels = if (err == null) Portal.liveChannels() else emptyList()

@@ -33,6 +33,7 @@ class KidDetailActivity : AppCompatActivity() {
     private lateinit var title: String
     private var poster: String = ""
     private var trailerKey: String? = null
+    private var isSeries: Boolean = false
 
     private lateinit var backdrop: ImageView
     private lateinit var posterView: ImageView
@@ -40,6 +41,13 @@ class KidDetailActivity : AppCompatActivity() {
     private lateinit var ratingsView: TextView
     private lateinit var overviewView: TextView
     private lateinit var trailerBtn: Button
+
+    // Series-only UI + state.
+    private var seasonBtn: Button? = null
+    private var episodesBox: LinearLayout? = null
+    private var seasons: List<Portal.Season> = emptyList()
+    private var curSeason: Portal.Season? = null
+    private var firstEp: Portal.Episode? = null
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
@@ -49,6 +57,7 @@ class KidDetailActivity : AppCompatActivity() {
         cmd = intent.getStringExtra("cmd") ?: ""
         title = intent.getStringExtra("title") ?: "Movie"
         poster = intent.getStringExtra("poster") ?: ""
+        isSeries = intent.getBooleanExtra("isSeries", false)
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF0B0F14.toInt()) }
 
@@ -121,9 +130,29 @@ class KidDetailActivity : AppCompatActivity() {
         }
         col.addView(trailerBtn)
 
+        // ---- Series: season selector + episode list (below the header) ----
+        if (isSeries) {
+            seasonBtn = Button(this).apply {
+                text = "Season  ▾"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
+                background = GradientDrawable().apply { cornerRadius = dp(24).toFloat(); setColor(0x33FFFFFF) }
+                setPadding(dp(28), dp(10), dp(28), dp(10))
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(20) }
+                setOnClickListener { pickSeason() }
+            }
+            col.addView(seasonBtn)
+
+            episodesBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) }
+            }
+            col.addView(episodesBox)
+        }
+
         play.requestFocus()
         connectPortal()
         loadDetails()
+        if (isSeries) loadSeasons()
     }
 
     override fun onResume() { super.onResume(); KidGuard.immersive(this); KidLimits.onResume(this) }
@@ -142,7 +171,7 @@ class KidDetailActivity : AppCompatActivity() {
         val key = BuildConfig.TMDB_KEY
         if (key.isBlank()) return
         io.execute {
-            val d = Tmdb.details(key, title, "", false) ?: return@execute
+            val d = Tmdb.details(key, title, "", isSeries) ?: return@execute // isSeries → TV lookup
             val om = if (BuildConfig.OMDB_KEY.isNotBlank())
                 Omdb.ratings(BuildConfig.OMDB_KEY, title, "") else null
             trailerKey = d.trailers.firstOrNull()?.youtubeKey
@@ -166,6 +195,13 @@ class KidDetailActivity : AppCompatActivity() {
     }
 
     private fun play() {
+        if (isSeries) {
+            // Series has no single file — play the first episode of the current season.
+            val e = firstEp; val s = curSeason
+            if (e == null || s == null) { toast("Loading episodes…"); return }
+            playEpisode(s, e)
+            return
+        }
         if (!connected) { toast("Still getting ready…"); return }
         toast("Opening $title…")
         io.execute {
@@ -175,6 +211,74 @@ class KidDetailActivity : AppCompatActivity() {
                 else {
                     PlayerActivity.kidMode = true
                     startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", title))
+                }
+            }
+        }
+    }
+
+    // ---- Series: seasons + episodes ----
+    private fun loadSeasons() {
+        io.execute {
+            val ss = Portal.seriesSeasons(vodId)
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                seasons = ss
+                if (ss.isEmpty()) return@runOnUiThread
+                seasonBtn?.visibility = View.VISIBLE
+                selectSeason(ss.first())
+            }
+        }
+    }
+
+    private fun pickSeason() {
+        if (seasons.isEmpty()) return
+        androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Choose a season")
+            .setItems(seasons.map { it.name }.toTypedArray()) { _, w -> selectSeason(seasons[w]) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun selectSeason(s: Portal.Season) {
+        curSeason = s
+        seasonBtn?.text = "${s.name}  ▾"
+        episodesBox?.removeAllViews()
+        io.execute {
+            val eps = Portal.seriesEpisodes(vodId, s.id).reversed() // portal is newest-first → E1..En
+            runOnUiThread {
+                if (isFinishing || curSeason?.id != s.id) return@runOnUiThread
+                firstEp = eps.firstOrNull()
+                buildEpisodes(eps, s)
+            }
+        }
+    }
+
+    private fun buildEpisodes(eps: List<Portal.Episode>, s: Portal.Season) {
+        val box = episodesBox ?: return
+        box.removeAllViews()
+        for (e in eps) {
+            val row = Button(this).apply {
+                text = "▶  ${e.name}"; textSize = 15f; setTextColor(0xFFE6EDF3.toInt())
+                gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0x22FFFFFF) }
+                setPadding(dp(20), dp(12), dp(20), dp(12))
+                isAllCaps = false
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+                setOnClickListener { playEpisode(s, e) }
+            }
+            box.addView(row)
+        }
+    }
+
+    private fun playEpisode(s: Portal.Season, e: Portal.Episode) {
+        if (!connected) { toast("Still getting ready…"); return }
+        val label = "$title — ${e.name}"
+        toast("Opening $label…")
+        io.execute {
+            val url = Portal.playEpisodeUrl(vodId, s.id, e.id)
+            runOnUiThread {
+                if (url.isNullOrEmpty()) toast("Couldn't play “$label”. Try again.")
+                else {
+                    PlayerActivity.kidMode = true
+                    startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", label))
                 }
             }
         }
