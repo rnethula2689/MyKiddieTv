@@ -96,11 +96,9 @@ class LiveVlcActivity : AppCompatActivity() {
         PlayPrefs.noteVolume(if (volMax() > 0) c * 100 / volMax() else 0)
     }
 
-    /** Apply the session mute/volume to the current player (audio output must already exist). */
+    /** Apply the session mute to the player's own audio output (independent of device volume). */
     private fun applyPlayPrefsAudio() {
-        if (!onTv) return   // tablets use the system volume, which persists on its own
-        val lvl = if (PlayPrefs.volPct >= 0) PlayPrefs.volPct * volMax() / 100 else volMax()
-        mp?.volume = if (PlayPrefs.muted) 0 else lvl
+        mp?.volume = if (PlayPrefs.muted) 0 else 100
     }
 
     /** Apply the session brightness + night mode (screen overlays; safe to call any time). */
@@ -1070,20 +1068,8 @@ class LiveVlcActivity : AppCompatActivity() {
         b.aspectBtn.text = "⤢  ${aspectModes[aspectIdx]}"
         b.aspectBtn.setOnClickListener { cycleAspect(); scheduleHide() }
 
-        b.volSeek.max = volMax()
-        refreshVol()
-        b.volSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    volSet(progress); updateMuteLabel()
-                    b.volLabel.text = "🔊  Volume  ${if (volMax() > 0) progress * 100 / volMax() else 0}%"
-                }
-            }
-            override fun onStartTrackingTouch(sb: SeekBar) {}
-            override fun onStopTrackingTouch(sb: SeekBar) {}
-        })
-        b.volBtn.setOnClickListener { refreshVol(); openPanel(b.volumePanel) }
-        b.muteBtn.setOnClickListener { toggleMute() }
+        updateMuteLabel()
+        b.volBtn.setOnClickListener { toggleMute() }   // simple mute/unmute toggle (no slider panel)
 
         b.brightSeek.max = 100
         b.brightSeek.progress = brightGetPct()
@@ -1159,25 +1145,21 @@ class LiveVlcActivity : AppCompatActivity() {
         }
     }
 
+    /** App-level mute toggle: mutes only the player's own audio (device volume keys stay independent). */
     private fun toggleMute() {
-        if (volGet() > 0) { preMuteVol = volGet(); volSet(0) }
-        else volSet(if (preMuteVol > 0) preMuteVol else volMax() / 2)
-        refreshVol()
+        PlayPrefs.muted = !PlayPrefs.muted
+        applyPlayPrefsAudio()   // push the new mute state to the player output
+        updateMuteLabel()
+        scheduleHide()
     }
 
-    private fun refreshVol() {
-        b.volSeek.progress = volGet()
-        updateMuteLabel()
-        val pct = if (volMax() > 0) volGet() * 100 / volMax() else 0
-        b.volLabel.text = "🔊  Volume  $pct%"
-    }
+    /** Kept so existing callers compile — just refreshes the mute icon now (no slider/device volume). */
+    private fun refreshVol() { updateMuteLabel() }
 
     private fun updateBrightLabel() { b.brightLabel.text = "☀  Brightness  ${brightGetPct()}%" }
 
     private fun updateMuteLabel() {
-        val muted = volGet() == 0
-        b.muteBtn.text = if (muted) "🔈  Unmute" else "🔇  Mute"
-        b.volBtn.text = if (muted) "🔇" else "🔊"
+        b.volBtn.text = if (PlayPrefs.muted) "🔇" else "🔊"
     }
 
     private fun closePanels() {
@@ -1341,6 +1323,8 @@ class LiveVlcActivity : AppCompatActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (screenLock?.locked == true) return true
         if (event.action == KeyEvent.ACTION_DOWN) {
+            // Hardware mute key → app-level mute toggle (may be OS-locked on Fire TV and never arrive).
+            if (event.keyCode == KeyEvent.KEYCODE_VOLUME_MUTE) { toggleMute(); return true }
             // Panel open: the focused slider handles ◀▶, focus nav moves to the Mute/Night button.
             // We only intercept Back (close) — everything else goes to native focus handling.
             if (panelOpen()) {
