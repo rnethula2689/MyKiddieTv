@@ -199,6 +199,10 @@ class KidMoviesActivity : AppCompatActivity() {
         }
     }
 
+    // Concurrent page fetches for the progressive category load, kept OFF the single `io` thread so
+    // tapping a title / opening a series responds instantly during a big load (mirrors Vibe's pageIo).
+    private val pageIo = Executors.newFixedThreadPool(3)
+
     private fun showAutoCategory(cat: Portal.VodCat) {
         autoCat = cat
         val seq = ++autoLoadSeq   // any navigation here supersedes an in-flight progressive load
@@ -206,28 +210,41 @@ class KidMoviesActivity : AppCompatActivity() {
         b.title.text = cat.title
         b.status.visibility = View.VISIBLE; b.status.text = "Loading ${cat.title}…"
         io.execute {
-            // Page 1 renders immediately; remaining pages are appended as they arrive (like Vibe's
-            // loadVodAll) — no "Load more" row. The io executor is single-threaded, so these page
-            // fetches run sequentially after page 1's UI post; the seq guard drops stale appends.
             val (items, pages) = Portal.vodList(cat.id, 1, autoSort())
             runOnUiThread {
                 if (seq != autoLoadSeq) return@runOnUiThread
                 b.status.visibility = if (items.isEmpty() && pages <= 1) View.VISIBLE else View.GONE
                 if (items.isEmpty() && pages <= 1) b.status.text = "Nothing here yet."
                 adapter.submit(autoRows(items)); b.list.scrollToPosition(0)
-                if (pages > 1) { b.status.visibility = View.VISIBLE; b.status.text = "Loading more…" }
+                if (pages > 1) { b.status.visibility = View.VISIBLE; b.status.text = "Loading…  ${items.size} titles" }
             }
             if (pages <= 1) return@execute
+            // Pages 2..N fetch CONCURRENTLY on pageIo and append in order with a live count (Vibe's
+            // loadVodAll pattern). A dedicated driver thread collects the futures so neither the io
+            // thread nor a pool thread blocks; the seq guard drops stale fetches + appends.
             val last = pages.coerceAtMost(1000)   // runaway guard
-            for (p in 2..last) {
-                if (seq != autoLoadSeq) return@execute   // user navigated away → stop fetching
-                val (more, _) = Portal.vodList(cat.id, p, autoSort())
-                runOnUiThread {
-                    if (seq != autoLoadSeq) return@runOnUiThread
-                    adapter.append(autoRows(more))
-                    if (p >= last) b.status.visibility = View.GONE
-                }
+            val sort = autoSort()
+            val futures = (2..last).map { p ->
+                pageIo.submit(java.util.concurrent.Callable {
+                    if (seq != autoLoadSeq) emptyList() else try { Portal.vodList(cat.id, p, sort).first } catch (_: Exception) { emptyList() }
+                })
             }
+            Thread {
+                var shown = items.size
+                for (f in futures) {
+                    if (seq != autoLoadSeq) break
+                    val more = try { f.get() } catch (_: Exception) { emptyList() }
+                    if (more.isEmpty()) continue
+                    shown += more.size
+                    val count = shown
+                    runOnUiThread {
+                        if (seq != autoLoadSeq) return@runOnUiThread
+                        adapter.append(autoRows(more))
+                        b.status.text = "Loading…  $count titles"
+                    }
+                }
+                runOnUiThread { if (seq == autoLoadSeq) b.status.visibility = View.GONE }
+            }.start()
         }
     }
 
