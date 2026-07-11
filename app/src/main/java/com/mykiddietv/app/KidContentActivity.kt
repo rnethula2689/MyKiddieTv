@@ -56,6 +56,10 @@ class KidContentActivity : AppCompatActivity() {
     private var pendingSearch: Runnable? = null
     private var searchSeq = 0
 
+    // Bumped on any navigation (new page displayed) so a stale progressive VOD page-load can't append
+    // into the wrong screen. Checked before each page fetch and before each UI append.
+    private var vodLoadSeq = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityKidcontentBinding.inflate(layoutInflater)
@@ -66,14 +70,22 @@ class KidContentActivity : AppCompatActivity() {
         savedEpisodeKeys = Profiles.allowedEpisodeKeys(this)
 
         adapter = KidPickAdapter({ n -> isChecked(n) }, { pos -> onRowClick(pos) }, { pos -> onRowLongClick(pos) })
-        // Folder chips tile 2-4 per row (mirrors the parent-side folder grid, so a 60-folder list
-        // isn't one huge column); channel/title pick rows keep the full width for their checkbox.
+        // One grid for everything (mirrors the parent side): folder chips tile 2-4 per row, movie/series
+        // posters tile in columns like the parent home, and channel/title pick rows keep the full width
+        // for their checkbox.
         val wdp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
         val chipCols = (wdp / 200f).toInt().coerceIn(2, 4)
-        val total = 60 // divisible by 2/3/4 so any column count fits
+        val posterCols = if (wdp >= 900) 6 else if (wdp >= 600) 5 else 3
+        val total = 60 // divisible by 2/3/4/5/6 so any column count fits
+        val chipSpan = total / chipCols
+        val posterSpan = total / posterCols
         val glm = androidx.recyclerview.widget.GridLayoutManager(this, total)
         glm.spanSizeLookup = object : androidx.recyclerview.widget.GridLayoutManager.SpanSizeLookup() {
-            override fun getSpanSize(position: Int) = if (adapter.isFolder(position)) total / chipCols else total
+            override fun getSpanSize(position: Int) = when {
+                adapter.isPoster(position) -> posterSpan
+                adapter.isFolder(position) -> chipSpan
+                else -> total
+            }
         }
         b.list.layoutManager = glm
         b.list.adapter = adapter
@@ -337,6 +349,9 @@ class KidContentActivity : AppCompatActivity() {
     private fun push(p: Page) { backStack.addLast(p); display(p) }
 
     private fun display(p: Page) {
+        // Any screen change supersedes an in-flight progressive VOD page-load (guards against a
+        // stale append landing in the wrong category/series/season/approved list).
+        ++vodLoadSeq
         if (backStack.isNotEmpty()) backStack[backStack.size - 1] = p
         currentManage = p.manage
         b.title.text = p.title
@@ -477,37 +492,49 @@ class KidContentActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Open a VOD category and progressively load ALL pages (no "Load more" row). Page 1 renders
+     * immediately; remaining pages are appended as they arrive (like [KidMoviesActivity.showAutoCategory]).
+     * The io executor is single-threaded, so page fetches run sequentially after page 1's UI post; the
+     * [vodLoadSeq] guard (bumped by [display] on any navigation) drops stale fetches + appends.
+     */
     private fun showVodList(cat: Portal.VodCat) {
         b.status.text = "Loading ${cat.title}…"
+        val sig = Configs.active(applicationContext)?.sig() ?: ""
         io.execute {
             val (items, pages) = Portal.vodList(cat.id, 1)
-            VodIndex.add(applicationContext, Configs.active(applicationContext)?.sig() ?: "", items, cat.id)
+            VodIndex.add(applicationContext, sig, items, cat.id)
+            val page1 = filterForPick(items).map { vodNode(it) }
             runOnUiThread {
                 b.status.text = ""
-                push(Page(cat.title, vodNodes(cat, ArrayList(items), 1, pages), Kind.VOD_CATEGORY, scopeCat = cat.id))
+                // push → display bumps vodLoadSeq; capture the fresh value AFTER so it matches this screen.
+                push(Page(cat.title, page1, Kind.VOD_CATEGORY, scopeCat = cat.id))
+                val seq = vodLoadSeq
+                if (pages > 1) { b.status.text = "Loading…"; streamVodPages(cat, sig, pages, seq) }
             }
         }
     }
 
-    private fun vodNodes(cat: Portal.VodCat, acc: ArrayList<Portal.VodItem>, loaded: Int, total: Int): List<KidNode> {
-        val nodes = ArrayList<KidNode>()
-        acc.forEach { nodes.add(vodNode(it)) }
-        if (loaded < total) {
-            nodes.add(KidNode("⬇  Load more  ($loaded/$total)", null, "", open = {
-                b.status.text = "Loading…"
-                io.execute {
-                    val (more, _) = Portal.vodList(cat.id, loaded + 1)
-                    VodIndex.add(applicationContext, Configs.active(applicationContext)?.sig() ?: "", more, cat.id)
-                    val moreFiltered = filterForPick(more)
-                    runOnUiThread {
-                        b.status.text = ""
-                        acc.addAll(moreFiltered)
-                        display(Page(cat.title, vodNodes(cat, acc, loaded + 1, total), Kind.VOD_CATEGORY, scopeCat = cat.id))
-                    }
+    /** Fetch pages 2..N of a category and append them to the current list, guarded by [seq]. */
+    private fun streamVodPages(cat: Portal.VodCat, sig: String, pages: Int, seq: Int) {
+        io.execute {
+            val last = pages.coerceAtMost(1000)   // runaway guard
+            for (p in 2..last) {
+                if (seq != vodLoadSeq) return@execute   // user navigated away → stop fetching
+                val (more, _) = Portal.vodList(cat.id, p)
+                VodIndex.add(applicationContext, sig, more, cat.id)
+                val nodes = filterForPick(more).map { vodNode(it) }
+                runOnUiThread {
+                    if (seq != vodLoadSeq) return@runOnUiThread
+                    adapter.append(nodes)
+                    displayed = displayed + nodes   // keep displayed in sync for Select-all / bottom bar
+                    // Grow the backstack page's nodes too, so clearing a search / back returns the full list.
+                    backStack.lastOrNull()?.let { pg -> backStack[backStack.size - 1] = pg.copy(nodes = pg.nodes + nodes) }
+                    updateBottomBar()
+                    if (p >= last) b.status.text = ""
                 }
-            }))
+            }
         }
-        return nodes
     }
 
     private fun channelNode(ch: Portal.Channel) = KidNode(
@@ -515,12 +542,13 @@ class KidContentActivity : AppCompatActivity() {
         ch.logoUrl, ch.name, channel = ch, alreadyAdded = savedChannelIds.contains(ch.id)
     )
 
-    // A movie is a pick; a series is a folder you drill into (seasons → episodes).
+    // A movie is a pick; a series is a folder you drill into (seasons → episodes). Both render as
+    // poster cards now (the art carries them), so the emoji prefixes are dropped.
     private fun vodNode(v: Portal.VodItem): KidNode =
         if (v.isSeries)
-            KidNode("📁  ${v.name}", v.posterUrl, v.name, open = { showSeasons(v) })
+            KidNode(v.name, v.posterUrl, v.name, isSeries = true, open = { showSeasons(v) })
         else
-            KidNode("🎬  ${v.name}", v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id))
+            KidNode(v.name, v.posterUrl, v.name, vod = v, alreadyAdded = savedVodIds.contains(v.id))
 
     private fun showSeasons(series: Portal.VodItem) {
         b.status.text = "Loading ${series.name}…"
@@ -626,6 +654,7 @@ class KidContentActivity : AppCompatActivity() {
 
     private fun vodSearch(query: String, catId: String?, page: Page) {
         pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
+        ++vodLoadSeq   // a search supersedes an in-flight progressive category load (stop stale appends)
         if (query.isEmpty()) { b.status.text = ""; submit(page.nodes); return }
         if (query.length < 2) return
         b.status.text = "Searching…"
@@ -677,6 +706,7 @@ class KidContentActivity : AppCompatActivity() {
         if (letter == null) { submit(page.nodes); return }
         if (page.kind == Kind.VOD_CATEGORY && page.scopeCat != null) {
             val cat = page.scopeCat
+            ++vodLoadSeq   // an A-Z jump supersedes an in-flight progressive category load
             b.status.text = "Loading “$letter”…"
             io.execute {
                 val items = filterForPick(Portal.vodByLetter(cat, letter))
