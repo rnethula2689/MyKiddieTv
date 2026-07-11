@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -83,6 +84,7 @@ object KidLimits {
     private val ui = Handler(Looper.getMainLooper())
     private var resumeAt = 0L
     private var checker: Runnable? = null
+    private var warned = false // one gentle "almost out of time" heads-up per foreground session
 
     /** @return true if the child was sent to the lock screen (caller should stop setting up content). */
     fun enforce(activity: Activity): Boolean {
@@ -96,17 +98,31 @@ object KidLimits {
 
     fun onResume(activity: Activity) {
         if (enforce(activity)) return
+        warned = false
         resumeAt = SystemClock.elapsedRealtime()
         checker?.let { ui.removeCallbacks(it) }
         val r = object : Runnable {
             override fun run() {
                 flush(activity)
                 if (!activity.isFinishing && enforce(activity)) return
+                maybeWarnLowTime(activity)
                 ui.postDelayed(this, 30_000)
             }
         }
         checker = r
         ui.postDelayed(r, 30_000)
+    }
+
+    /** One gentle heads-up in the last few minutes before the daily limit cuts the child off, so the
+     *  lock screen isn't a jarring surprise mid-show. Shown once per foreground session. */
+    private fun maybeWarnLowTime(activity: Activity) {
+        if (warned || activity.isFinishing) return
+        if (dailyLimitMin(activity) <= 0) return          // no limit set → nothing to warn about
+        val left = remainingMin(activity)
+        if (left in 1..5) {
+            warned = true
+            Toast.makeText(activity, "⏰  $left more minute${if (left == 1) "" else "s"} of watching today!", Toast.LENGTH_LONG).show()
+        }
     }
 
     fun onPause(activity: Activity) {

@@ -276,10 +276,14 @@ class KidMoviesActivity : AppCompatActivity() {
         b.list.scrollToPosition(0)
     }
 
-    private fun playEpisode(ep: Profiles.KidEpisode) =
-        play("${ep.seriesName} — ${ep.name}") { Portal.playEpisodeUrl(ep.seriesId, ep.seasonId, ep.episodeId) }
+    private fun playEpisode(ep: Profiles.KidEpisode) {
+        val rid = "${ep.seriesId}|${ep.seasonId}|${ep.episodeId}"
+        play("${ep.seriesName} — ${ep.name}", rid, "ep|${ep.seriesId}|${ep.seasonId}|${ep.episodeId}", ep.poster) {
+            Portal.playEpisodeUrl(ep.seriesId, ep.seasonId, ep.episodeId)
+        }
+    }
 
-    private fun play(title: String, resolve: () -> String?) {
+    private fun play(title: String, resumeId: String = "", resumeSource: String = "", poster: String = "", resolve: () -> String?) {
         if (!connected) { Toast.makeText(this, "Still getting ready…", Toast.LENGTH_SHORT).show(); return }
         b.status.visibility = View.VISIBLE
         b.status.text = "Opening $title…"
@@ -292,11 +296,14 @@ class KidMoviesActivity : AppCompatActivity() {
                 } else {
                     b.status.visibility = View.GONE
                     PlayerActivity.kidMode = true
-                    startActivity(
-                        Intent(this, PlayerActivity::class.java)
-                            .putExtra("url", url)
-                            .putExtra("title", title)
-                    )
+                    val i = Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", title)
+                    if (resumeId.isNotBlank()) {
+                        // Carry the resume contract so it records progress + resumes (Continue Watching).
+                        val start = Resume.get(this, resumeId)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                        i.putExtra("resumeId", resumeId).putExtra("resumeSource", resumeSource)
+                            .putExtra("resumePoster", poster).putExtra("resumeStart", start)
+                    }
+                    startActivity(i)
                 }
             }
         }

@@ -15,7 +15,42 @@
         android:textColor="#19c37d"
         android:textSize="32sp"
         android:textStyle="bold"
-        android:layout_marginBottom="28dp" />
+        android:layout_marginBottom="24dp" />
+
+    <!-- Continue Watching rail (populated in code from the Resume store; hidden when empty). -->
+    <LinearLayout
+        android:id="@+id/cwSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:layout_marginBottom="20dp">
+
+        <TextView
+            android:id="@+id/cwLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="▶  Keep watching"
+            android:textColor="#e6edf3"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginStart="4dp"
+            android:layout_marginBottom="10dp" />
+
+        <HorizontalScrollView
+            android:id="@+id/cwScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none"
+            android:clipToPadding="false">
+
+            <LinearLayout
+                android:id="@+id/cwRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+    </LinearLayout>
 
     <Button
         android:id="@+id/liveBtn"

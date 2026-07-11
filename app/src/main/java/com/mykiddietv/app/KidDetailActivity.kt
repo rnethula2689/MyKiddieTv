@@ -247,7 +247,13 @@ class KidDetailActivity : AppCompatActivity() {
                 if (url.isNullOrEmpty()) toast("Couldn't play “$title”. Try again.")
                 else {
                     PlayerActivity.kidMode = true
-                    startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", title))
+                    // Carry the resume contract so the movie records progress (Continue Watching) and
+                    // picks up where the kid left off.
+                    val start = Resume.get(this, vodId)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                    startActivity(Intent(this, PlayerActivity::class.java)
+                        .putExtra("url", url).putExtra("title", title)
+                        .putExtra("resumeId", vodId).putExtra("resumeSource", "vod|$vodId|$cmd")
+                        .putExtra("resumePoster", poster).putExtra("resumeStart", start))
                 }
             }
         }
@@ -391,7 +397,12 @@ class KidDetailActivity : AppCompatActivity() {
                 if (url.isNullOrEmpty()) toast("Couldn't play “$label”. Try again.")
                 else {
                     PlayerActivity.kidMode = true
-                    startActivity(Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", label))
+                    val rid = "$vodId|${s.id}|${e.id}"
+                    val start = Resume.get(this, rid)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                    startActivity(Intent(this, PlayerActivity::class.java)
+                        .putExtra("url", url).putExtra("title", label)
+                        .putExtra("resumeId", rid).putExtra("resumeSource", "ep|$vodId|${s.id}|${e.id}")
+                        .putExtra("resumePoster", poster).putExtra("resumeStart", start))
                 }
             }
         }
