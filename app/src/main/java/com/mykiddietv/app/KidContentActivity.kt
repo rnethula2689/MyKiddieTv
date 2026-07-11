@@ -19,6 +19,9 @@ import java.util.concurrent.Executors
  */
 class KidContentActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
+    // Concurrent page fetches for the progressive category load. Kept OFF the single `io` thread so
+    // tapping a title / drilling into a series isn't blocked behind a big folder's page loads (mirrors Vibe's pageIo).
+    private val pageIo = Executors.newFixedThreadPool(3)
     private val ui = Handler(Looper.getMainLooper())
     private lateinit var b: ActivityKidcontentBinding
     private lateinit var adapter: KidPickAdapter
@@ -352,6 +355,7 @@ class KidContentActivity : AppCompatActivity() {
         // Any screen change supersedes an in-flight progressive VOD page-load (guards against a
         // stale append landing in the wrong category/series/season/approved list).
         ++vodLoadSeq
+        b.status.text = "" // clear any "Loading… N titles" left by the screen we're leaving (was sticking on Back)
         if (backStack.isNotEmpty()) backStack[backStack.size - 1] = p
         currentManage = p.manage
         b.title.text = p.title
@@ -506,22 +510,31 @@ class KidContentActivity : AppCompatActivity() {
             VodIndex.add(applicationContext, sig, items, cat.id)
             val page1 = filterForPick(items).map { vodNode(it) }
             runOnUiThread {
-                b.status.text = ""
-                // push → display bumps vodLoadSeq; capture the fresh value AFTER so it matches this screen.
+                // push → display bumps vodLoadSeq (and clears status); capture the fresh value AFTER so it matches this screen.
                 push(Page(cat.title, page1, Kind.VOD_CATEGORY, scopeCat = cat.id))
                 val seq = vodLoadSeq
-                if (pages > 1) { b.status.text = "Loading…"; streamVodPages(cat, sig, pages, seq) }
+                if (pages > 1) { b.status.text = "Loading…  ${displayed.size} titles"; streamVodPages(cat, sig, pages, seq) }
             }
         }
     }
 
-    /** Fetch pages 2..N of a category and append them to the current list, guarded by [seq]. */
+    /** Fetch pages 2..N CONCURRENTLY (on pageIo, off the `io` work thread) and append them in order as
+     *  they arrive, with a live "Loading… N titles" count — mirrors Vibe's loadVodAll. A dedicated driver
+     *  thread collects the futures (NOT a pageIo thread → no pool-within-pool deadlock); the `io` thread
+     *  stays free so taps/drills respond instantly during the load. [seq] guards against stale appends. */
     private fun streamVodPages(cat: Portal.VodCat, sig: String, pages: Int, seq: Int) {
-        io.execute {
-            val last = pages.coerceAtMost(1000)   // runaway guard
-            for (p in 2..last) {
-                if (seq != vodLoadSeq) return@execute   // user navigated away → stop fetching
-                val (more, _) = Portal.vodList(cat.id, p)
+        val last = pages.coerceAtMost(1000)   // runaway guard
+        val futures = (2..last).map { p ->
+            pageIo.submit(java.util.concurrent.Callable {
+                // Superseded (user navigated away)? Skip the network call so queued pages drain instantly.
+                if (seq != vodLoadSeq) emptyList() else try { Portal.vodList(cat.id, p).first } catch (_: Exception) { emptyList() }
+            })
+        }
+        Thread {
+            for (f in futures) {
+                if (seq != vodLoadSeq) break
+                val more = try { f.get() } catch (_: Exception) { emptyList() }
+                if (more.isEmpty()) continue
                 VodIndex.add(applicationContext, sig, more, cat.id)
                 val nodes = filterForPick(more).map { vodNode(it) }
                 runOnUiThread {
@@ -531,10 +544,11 @@ class KidContentActivity : AppCompatActivity() {
                     // Grow the backstack page's nodes too, so clearing a search / back returns the full list.
                     backStack.lastOrNull()?.let { pg -> backStack[backStack.size - 1] = pg.copy(nodes = pg.nodes + nodes) }
                     updateBottomBar()
-                    if (p >= last) b.status.text = ""
+                    b.status.text = "Loading…  ${displayed.size} titles"
                 }
             }
-        }
+            runOnUiThread { if (seq == vodLoadSeq) b.status.text = "" }
+        }.start()
     }
 
     private fun channelNode(ch: Portal.Channel) = KidNode(
