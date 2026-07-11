@@ -112,6 +112,15 @@ In the kid home, children see big, simple tiles. A managed child sees ONLY
 what you approved, with no way to wander outside it; a child with content
 management OFF can browse the full catalogue.
 
+If the child is partway through a movie or show, a "Keep watching" row appears
+at the top of their home with a picture of it — one tap resumes right where
+they left off. For a managed child this row only ever shows titles you have
+approved, so nothing new can appear there.
+
+When a daily screen-time limit is set, the child gets a gentle "X more minutes"
+heads-up a few minutes before time runs out, so the lock screen isn't a
+surprise mid-show.
+
 
 8. WATCHING LIVE TV
 -------------------
