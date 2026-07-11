@@ -70,6 +70,13 @@ class KidMoviesActivity : AppCompatActivity() {
         showHome()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        ++autoLoadSeq           // cancel any in-flight progressive page load
+        pageIo.shutdownNow()
+        io.shutdownNow()
+    }
+
     /** Show/hide the 🔍 button and the ⇅ sort + A–Z bar for the current screen. */
     private fun setTools(search: Boolean, category: Boolean) {
         b.searchBtn.visibility = if (search) View.VISIBLE else View.GONE

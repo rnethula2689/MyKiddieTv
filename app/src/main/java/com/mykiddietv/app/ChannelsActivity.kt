@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.View
 import coil.load
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.mykiddietv.app.databinding.ActivityChannelsBinding
 import java.util.concurrent.Executors
 

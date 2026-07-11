@@ -187,7 +187,9 @@ play or remove.
 
 15. PLAYER CONTROLS
 -------------------
-Aspect ratio, volume and brightness are on the player's top bar / side panels.
+Aspect ratio and brightness are on the player's top bar / side panels. The
+speaker button is a mute/unmute toggle — use the device volume keys to set
+how loud it is.
 Sleep timer is in the player menu and in Settings.
 
 

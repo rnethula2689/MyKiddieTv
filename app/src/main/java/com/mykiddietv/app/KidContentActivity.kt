@@ -111,6 +111,13 @@ class KidContentActivity : AppCompatActivity() {
         connectAndLoad()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        ++vodLoadSeq            // cancel any in-flight progressive page load
+        pageIo.shutdownNow()
+        io.shutdownNow()
+    }
+
     private fun connectAndLoad() {
         val acct = Configs.active(this)
         if (acct == null) {
@@ -637,10 +644,15 @@ class KidContentActivity : AppCompatActivity() {
     private fun globalSearch(query: String, page: Page) {
         pendingSearch?.let { ui.removeCallbacks(it) }; searchSeq++
         if (query.isEmpty()) { b.status.text = ""; submit(page.nodes); return }
-        val chNodes = allChannels.asSequence().filter { it.name.contains(query, true) }
+        // Match browse: only channels whose category the active content profile allows are pickable.
+        val chNodes = allChannels.asSequence()
+            .filter { ContentProfiles.liveCatVisible(this, it.genreId) }
+            .filter { it.name.contains(query, true) }
             .take(150).map { channelNode(it) }.toList()
         submit(chNodes)
         if (query.length < 2) return
+        // NOTE: the VOD search below is intentionally NOT profile-filtered — portal-wide VOD search
+        // results can't be attributed to a category, so vodCatVisible can't be applied here.
         b.status.text = "Searching movies & shows…"
         val seq = searchSeq
         val scope = "kg"

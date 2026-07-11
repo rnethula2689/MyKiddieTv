@@ -23,7 +23,6 @@ class KidLiveActivity : AppCompatActivity() {
     }
 
     private val io = Executors.newSingleThreadExecutor()
-    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private lateinit var b: ActivityKidmoviesBinding
     private val adapter = RowAdapter()
     private var connected = false

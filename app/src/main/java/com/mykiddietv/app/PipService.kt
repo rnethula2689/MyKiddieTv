@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
-import android.view.View
 import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -29,7 +28,6 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
 import com.mykiddietv.app.databinding.PipOverlayBinding
 import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.NextRenderersFactory
 

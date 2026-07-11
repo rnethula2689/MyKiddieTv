@@ -278,6 +278,7 @@ class KidDetailActivity : AppCompatActivity() {
 
     private fun selectSeason(s: Portal.Season) {
         curSeason = s
+        firstEp = null   // don't let Play pair the new season with the old season's first episode
         seasonBtn?.text = "${s.name}  ▾"
         episodesBox?.removeAllViews()
         io.execute {
