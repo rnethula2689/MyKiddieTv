@@ -88,6 +88,10 @@ Usage resets each day automatically.
 Settings > Kids > Watch history shows what your child has watched, with times.
 Use "Clear" to reset it.
 
+Per-child cleanup lives in Settings > Kids > Storage. Choose a child, then clear
+that child's Continue Watching, downloaded movies/shows, or watch history without
+clearing another child's saved progress.
+
 
 7. THE "WHO'S WATCHING?" SCREEN
 -------------------------------
@@ -155,6 +159,8 @@ landscape automatically.
   - Favourites: starred channels/titles.
   - Watch Later: a saved list (search, sort, export from its tab).
   - Continue Watching: resume anything started; long-press to remove.
+Kid Continue Watching is kept per child for new playback. Parents can clear it
+from Settings > Kids > Storage.
 
 
 12. DOWNLOADS (WATCH OFFLINE)
@@ -210,7 +216,7 @@ Sleep timer is in the player menu and in Settings.
   - Personalization: hide the "Recently Added" and/or "For You" rows.
   - Remote control (key mapping): re-assign remote buttons - see 17.
   - Kids: manage each child's approved content, the "manage content" on/off
-    choice, screen-time limit, bedtime, and watch history.
+    choice, screen-time limit, bedtime, watch history, and per-child storage.
   - Parental PIN: the passcode that protects this area.
   - Playback settings: buffering and hardware decoding (raise buffer for
     stutter; turn hardware decoding off if a video won't play).

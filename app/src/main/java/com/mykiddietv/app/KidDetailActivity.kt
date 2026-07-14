@@ -249,7 +249,7 @@ class KidDetailActivity : AppCompatActivity() {
                     PlayerActivity.kidMode = true
                     // Carry the resume contract so the movie records progress (Continue Watching) and
                     // picks up where the kid left off.
-                    val start = Resume.get(this, vodId)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                    val start = Resume.get(this, vodId, Profiles.activeKidId(this) ?: "")?.takeIf { Resume.resumable(it) }?.position ?: 0L
                     startActivity(Intent(this, PlayerActivity::class.java)
                         .putExtra("url", url).putExtra("title", title)
                         .putExtra("resumeId", vodId).putExtra("resumeSource", "vod|$vodId|$cmd")
@@ -398,7 +398,7 @@ class KidDetailActivity : AppCompatActivity() {
                 else {
                     PlayerActivity.kidMode = true
                     val rid = "$vodId|${s.id}|${e.id}"
-                    val start = Resume.get(this, rid)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                    val start = Resume.get(this, rid, Profiles.activeKidId(this) ?: "")?.takeIf { Resume.resumable(it) }?.position ?: 0L
                     startActivity(Intent(this, PlayerActivity::class.java)
                         .putExtra("url", url).putExtra("title", label)
                         .putExtra("resumeId", rid).putExtra("resumeSource", "ep|$vodId|${s.id}|${e.id}")

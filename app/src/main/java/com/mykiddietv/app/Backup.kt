@@ -32,7 +32,8 @@ object Backup {
         val rs = JSONArray()
         for (e in Resume.all(ctx)) rs.put(JSONObject()
             .put("id", e.id).put("kind", e.kind).put("title", e.title).put("poster", e.poster)
-            .put("source", e.source).put("position", e.position).put("duration", e.duration))
+            .put("source", e.source).put("position", e.position).put("duration", e.duration)
+            .put("kidId", e.kidId))
         o.put("resume", rs)
         return o.toString(2)
     }
@@ -80,9 +81,10 @@ object Backup {
             for (i in 0 until a.length()) {
                 val e = a.optJSONObject(i) ?: continue
                 val id = e.optString("id")
-                if (id.isBlank() || Resume.get(ctx, id) != null) continue
+                val kidId = e.optString("kidId", "")
+                if (id.isBlank() || Resume.get(ctx, id, kidId) != null) continue
                 Resume.save(ctx, id, e.optString("kind"), e.optString("title"), e.optString("poster"),
-                    e.optString("source"), e.optLong("position"), e.optLong("duration"))
+                    e.optString("source"), e.optLong("position"), e.optLong("duration"), kidId = kidId)
                 rs++
             }
         }

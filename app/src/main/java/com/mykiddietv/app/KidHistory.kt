@@ -40,6 +40,8 @@ object KidHistory {
         return out
     }
 
+    fun forKid(ctx: Context, kidId: String): List<H> = all(ctx).filter { it.kidId == kidId }
+
     private fun save(ctx: Context, list: List<H>) {
         val a = JSONArray()
         for (h in list.take(MAX)) a.put(JSONObject()
@@ -74,6 +76,14 @@ object KidHistory {
         if (add <= 0L) return
         val list = ArrayList(all(ctx))
         list.firstOrNull { "${it.kidId}|${it.title}" == curKey }?.let { it.durationMs += add; save(ctx, list) }
+    }
+
+    fun clearForKid(ctx: Context, kidId: String): Int {
+        val cur = all(ctx)
+        val next = cur.filterNot { it.kidId == kidId }
+        save(ctx, next)
+        if (curKey.startsWith("$kidId|")) { curKey = ""; curStart = 0L }
+        return cur.size - next.size
     }
 
     fun clear(ctx: Context) { prefs(ctx).edit().remove(KEY).apply(); curKey = ""; curStart = 0L }

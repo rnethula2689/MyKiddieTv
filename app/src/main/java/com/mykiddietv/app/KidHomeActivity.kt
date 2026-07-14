@@ -97,11 +97,12 @@ class KidHomeActivity : AppCompatActivity() {
     /** Show a "Keep watching" rail of movies/episodes the kid is partway through (from the Resume store,
      *  restricted items filtered out). Tapping a card resumes from where they left off. */
     private fun refreshContinueWatching() {
-        // Resume is scoped per account (not per kid), so a content-managed kid must only ever see items
-        // that are STILL on their own whitelist — never a sibling's. Full-access kids can watch anything,
-        // so no extra filter is needed for them. ("Hide, never show.")
+        // Resume is scoped per account/content-profile, with new kid playback tagged by child id. A
+        // content-managed kid must also only see items that are STILL on their own whitelist.
+        val kid = Profiles.activeKid(this)
         val manage = Profiles.activeManageContent(this)
         val entries = Resume.all(this).filterNot { it.restricted }.filter { Resume.resumable(it) }
+            .filter { kid == null || it.kidId.isBlank() || it.kidId == kid.id }
             .filter { !manage || isApprovedForKid(it) }
             .take(12)
         b.cwRow.removeAllViews()

@@ -523,8 +523,10 @@ class LiveVlcActivity : AppCompatActivity() {
         val p = mp ?: return
         val pos = p.time
         val dur = if (knownDurationMs > 0) knownDurationMs else p.length
-        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0, movieYear)
+        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0, movieYear, kidId = resumeKidId())
     }
+
+    private fun resumeKidId() = if (kidMode) (Profiles.activeKidId(this) ?: "") else ""
 
     /** End of a VOD item: autoplay the next episode, or (movie / autoplay off) offer to drop it. */
     private fun onVodEnded() {
@@ -542,12 +544,12 @@ class LiveVlcActivity : AppCompatActivity() {
             .setCancelable(false)
             .setPositiveButton("Yes, remove") { _, _ ->
                 resumeId = ""  // stop onStop/onDestroy re-adding it
-                Resume.remove(applicationContext, id); finish()
+                Resume.remove(applicationContext, id, resumeKidId()); finish()
             }
             .setNegativeButton("Keep") { _, _ ->
                 resumeId = ""
                 val dur = if (knownDurationMs > 0) knownDurationMs else (mp?.length ?: 0L)
-                Resume.save(applicationContext, id, "vod", titleText, resumePoster, resumeSource, 0L, dur)
+                Resume.save(applicationContext, id, "vod", titleText, resumePoster, resumeSource, 0L, dur, kidId = resumeKidId())
                 finish()
             }
             .show()

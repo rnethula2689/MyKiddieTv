@@ -299,7 +299,7 @@ class KidMoviesActivity : AppCompatActivity() {
                     val i = Intent(this, PlayerActivity::class.java).putExtra("url", url).putExtra("title", title)
                     if (resumeId.isNotBlank()) {
                         // Carry the resume contract so it records progress + resumes (Continue Watching).
-                        val start = Resume.get(this, resumeId)?.takeIf { Resume.resumable(it) }?.position ?: 0L
+                        val start = Resume.get(this, resumeId, Profiles.activeKidId(this) ?: "")?.takeIf { Resume.resumable(it) }?.position ?: 0L
                         i.putExtra("resumeId", resumeId).putExtra("resumeSource", resumeSource)
                             .putExtra("resumePoster", poster).putExtra("resumeStart", start)
                     }

@@ -258,6 +258,7 @@ object Profiles {
 
     // ---- which downloads were made FOR THE ACTIVE KID (vs the parent's own downloads) ----
     fun kidDownloadIds(ctx: Context): LinkedHashSet<String> = activeKid(ctx)?.downloads ?: LinkedHashSet()
+    fun kidDownloadIds(ctx: Context, kidId: String): LinkedHashSet<String> = kid(ctx, kidId)?.downloads ?: LinkedHashSet()
     /** A download id belongs to *any* kid (parent Downloads screen hides all of them). */
     fun isKidDownload(ctx: Context, id: String): Boolean = kids(ctx).any { it.downloads.contains(id) }
     fun addKidDownload(ctx: Context, id: String) { val k = activeKid(ctx) ?: return; if (k.downloads.add(id)) saveActive(ctx, k) }
@@ -266,5 +267,15 @@ object Profiles {
         val list = kids(ctx); var changed = false
         for (k in list) if (k.downloads.remove(id)) changed = true
         if (changed) saveKids(ctx, list)
+    }
+    fun clearKidDownloads(ctx: Context, kidId: String): Set<String> {
+        val list = kids(ctx)
+        val k = list.firstOrNull { it.id == kidId } ?: return emptySet()
+        val removed = LinkedHashSet(k.downloads)
+        if (removed.isNotEmpty()) {
+            k.downloads.clear()
+            saveKids(ctx, list)
+        }
+        return removed
     }
 }

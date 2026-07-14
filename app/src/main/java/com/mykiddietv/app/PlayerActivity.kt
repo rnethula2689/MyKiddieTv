@@ -846,6 +846,8 @@ class PlayerActivity : AppCompatActivity() {
         PlayPrefs.night = nightOn
     }
 
+    private fun resumeKidId() = if (kidMode) (Profiles.activeKidId(this) ?: "") else ""
+
     /** A finished movie: ask whether to drop it from Continue Watching (TV + tablet). */
     private fun promptRemoveFromContinue() {
         if (isLive) return
@@ -858,14 +860,14 @@ class PlayerActivity : AppCompatActivity() {
             .setCancelable(false)
             .setPositiveButton("Yes, remove") { _, _ ->
                 resumeId = "" // stop onStop/saveResume from re-adding it
-                Resume.remove(applicationContext, id)
+                Resume.remove(applicationContext, id, resumeKidId())
                 finish()
             }
             .setNegativeButton("Keep") { _, _ ->
                 // Keep it in Continue Watching: a finished (~end) position would be auto-dropped, so
                 // re-save it (reset to start = a clean re-watch entry) and stop onStop overwriting it.
                 resumeId = ""
-                Resume.save(applicationContext, id, "vod", titleText, resumePoster, resumeSource, 0L, player?.duration ?: 0L, movieYear)
+                Resume.save(applicationContext, id, "vod", titleText, resumePoster, resumeSource, 0L, player?.duration ?: 0L, movieYear, kidId = resumeKidId())
                 finish()
             }
             .show()
@@ -876,7 +878,7 @@ class PlayerActivity : AppCompatActivity() {
         val p = player ?: return
         val pos = p.currentPosition
         val dur = p.duration
-        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0, movieYear)
+        if (pos > 0) Resume.save(applicationContext, resumeId, "vod", titleText, resumePoster, resumeSource, pos, if (dur > 0) dur else 0, movieYear, kidId = resumeKidId())
     }
 
     override fun onBackPressed() {

@@ -1104,7 +1104,7 @@ class ChannelsActivity : AppCompatActivity() {
 
         // Content rails (thumbnails) from local data — no portal calls, so the home is instant.
         // Restricted (adult/censored) items are kept off the home rail so they can't be replayed without the PIN.
-        val cw = Resume.all(this).filterNot { it.restricted }
+        val cw = Resume.allForParent(this).filterNot { it.restricted }
         if (cw.isNotEmpty()) rows.add(Row("Continue Watching", null, rail = cw.map { e ->
             val pct = if (e.duration > 0) (e.position * 100 / e.duration).toInt() else -1
             Card(e.title, e.poster.ifBlank { null }, pct, landscape = true, onLongClick = { cwCardMenu(e) }) { continueClick(e) }
@@ -1175,7 +1175,7 @@ class ChannelsActivity : AppCompatActivity() {
                     0 -> { Resume.remove(this, e.id); showHome() }
                     1 -> androidx.appcompat.app.AlertDialog.Builder(this)
                         .setTitle("Clear all Continue Watching?")
-                        .setPositiveButton("Clear all") { _, _ -> Resume.clearAll(this); showHome() }
+                        .setPositiveButton("Clear all") { _, _ -> Resume.clearParent(this); showHome() }
                         .setNegativeButton("Cancel", null).show()
                 }
             }.show()
@@ -1352,7 +1352,7 @@ class ChannelsActivity : AppCompatActivity() {
     }
 
     private fun showContinueWatching() {
-        val all = Resume.all(this).filterNot { it.restricted } // hide adult/censored items (no PIN bypass)
+        val all = Resume.allForParent(this).filterNot { it.restricted } // hide adult/censored items (no PIN bypass)
         val live = all.filter { it.kind == "live" }
         val vod = all.filter { it.kind != "live" }
         val rows = ArrayList<Row>()
@@ -1378,7 +1378,7 @@ class ChannelsActivity : AppCompatActivity() {
             .setTitle("Clear Continue Watching?")
             .setMessage("This removes everything from your Continue Watching list.")
             .setPositiveButton("Clear all") { _, _ ->
-                Resume.clearAll(this)
+                Resume.clearParent(this)
                 android.widget.Toast.makeText(this, "Continue Watching cleared", android.widget.Toast.LENGTH_SHORT).show()
                 onBackPressed() // back to home; the row is gone
             }

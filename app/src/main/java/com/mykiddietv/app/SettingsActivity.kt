@@ -156,13 +156,14 @@ class SettingsActivity : AppCompatActivity() {
     private fun showKidsDialog() {
         AlertDialog.Builder(this)
             .setTitle("Kids")
-            .setItems(arrayOf("⏱  Screen time & bedtime", "📜  Watch history", "👤  Profile names & passcode", "🧩  Manage kid content")) { _, w ->
+            .setItems(arrayOf("⏱  Screen time & bedtime", "📜  Watch history", "👤  Profile names & passcode", "🧩  Manage kid content", "💾  Storage")) { _, w ->
                 when (w) {
                     // Screen-time offers an extra "All kids" option; the rest manage one specific kid.
                     0 -> withChosenKid(allowAll = true) { KidScreenTime.show(this, it?.id) }
                     1 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); startActivity(Intent(this, KidHistoryActivity::class.java)) }
                     2 -> withChosenKid { Profiles.setActiveKid(this, it!!.id); showKidNamesDialog() }
                     3 -> withChosenKid { val k = it!!; Profiles.setActiveKid(this, k.id); startActivity(Intent(this, if (k.manageContent) KidContentActivity::class.java else KidFoldersActivity::class.java)) }
+                    4 -> withChosenKid { showKidStorageDialog(it!!) }
                 }
             }
             .setNegativeButton("Close", null)
@@ -188,6 +189,58 @@ class SettingsActivity : AppCompatActivity() {
                     .show()
             }
         }
+    }
+
+    private fun showKidStorageDialog(kid: Profiles.Kid) {
+        val cwCount = Resume.allForKid(this, kid).count { !it.restricted && Resume.resumable(it) }
+        val dlCount = Profiles.kidDownloadIds(this, kid.id).size
+        val histCount = KidHistory.forKid(this, kid.id).size
+        val items = arrayOf(
+            "Continue Watching ($cwCount)",
+            "Downloaded Movies & Shows ($dlCount)",
+            "Watch history ($histCount)"
+        )
+        val checked = BooleanArray(items.size)
+        AlertDialog.Builder(this)
+            .setTitle("Storage — ${kid.name}")
+            .setMultiChoiceItems(items, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton("Clear selected") { _, _ ->
+                if (checked.any { it }) confirmClearKidStorage(kid, items, checked) else toast("Nothing selected.")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmClearKidStorage(kid: Profiles.Kid, items: Array<String>, sel: BooleanArray) {
+        val names = items.filterIndexed { i, _ -> sel[i] }.joinToString(", ") { it.substringBefore(" (") }
+        AlertDialog.Builder(this)
+            .setTitle("Clear $names for ${kid.name}?")
+            .setMessage("This only clears the selected kid's storage on this device.")
+            .setPositiveButton("Clear") { _, _ -> doClearKidStorage(kid, sel) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun doClearKidStorage(kid: Profiles.Kid, sel: BooleanArray) {
+        val parts = ArrayList<String>()
+        if (sel[0]) {
+            val n = Resume.clearForKid(this, kid)
+            parts.add("$n continue-watching item${if (n == 1) "" else "s"}")
+        }
+        if (sel[1]) {
+            val ids = Profiles.clearKidDownloads(this, kid.id)
+            for (id in ids) {
+                if (!Profiles.isKidDownload(this, id)) {
+                    Downloads.delete(applicationContext, id)
+                }
+            }
+            parts.add("${ids.size} download item${if (ids.size == 1) "" else "s"}")
+        }
+        if (sel[2]) {
+            val n = KidHistory.clearForKid(this, kid.id)
+            parts.add("$n history item${if (n == 1) "" else "s"}")
+        }
+        toast("Cleared ${parts.joinToString(", ")} for ${kid.name}.")
     }
 
     private fun showKidNamesDialog() {
@@ -319,7 +372,7 @@ class SettingsActivity : AppCompatActivity() {
         if (sel[0]) try { cacheDir.listFiles()?.forEach { it.deleteRecursively() } } catch (_: Exception) {}
         if (sel[1]) { Favorites.clearAll(this); Configs.clearFavorites(this) }
         if (sel[2]) WatchLater.clearAll(this)
-        if (sel[3]) Resume.clearAll(this)
+        if (sel[3]) Resume.clearParent(this)
         if (sel[4]) Downloads.deleteAll(this)
         if (sel[5]) Recordings.deleteAll(this)
         toast("Cleared.")
