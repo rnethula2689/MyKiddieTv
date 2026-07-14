@@ -231,7 +231,8 @@ Sleep timer is in the player menu and in Settings.
   - Fast-scroll: in a long list, HOLD Up to jump to the top / A-Z bar. In the
     User Guide, Up/Down page-scroll.
   - Storage: clear Cache, Favourites, Watch Later, Continue Watching,
-    Downloads, or Recordings - selectively or all.
+    parent Downloads, or Recordings - selectively or all. Kid downloads are
+    cleared per child from Settings > Kids > Storage.
   - Subtitles: OpenSubtitles API key.
   - TV Guide (EPG): optional external XMLTV URL (.xml / .xml.gz).
   - App updates: check for and install the latest version.

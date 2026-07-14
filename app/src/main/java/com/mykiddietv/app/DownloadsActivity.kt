@@ -30,10 +30,12 @@ class DownloadsActivity : AppCompatActivity(), Downloads.Listener {
 
     private fun confirmRemoveAll() {
         AlertDialog.Builder(this)
-            .setTitle("Remove all downloads?")
-            .setMessage("This deletes every downloaded title and frees the disk space. This cannot be undone.")
+            .setTitle("Remove parent downloads?")
+            .setMessage("This deletes the parent's downloaded titles and frees the disk space. Kid downloads are managed from Kids > Storage.")
             .setPositiveButton("Remove all") { _, _ ->
-                Downloads.deleteAll(applicationContext)
+                Downloads.list(applicationContext)
+                    .filterNot { Profiles.isKidDownload(applicationContext, it.id) }
+                    .forEach { Downloads.delete(applicationContext, it.id) }
                 refresh()
             }
             .setNegativeButton("Cancel", null)

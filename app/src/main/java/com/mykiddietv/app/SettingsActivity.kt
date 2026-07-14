@@ -373,9 +373,15 @@ class SettingsActivity : AppCompatActivity() {
         if (sel[1]) { Favorites.clearAll(this); Configs.clearFavorites(this) }
         if (sel[2]) WatchLater.clearAll(this)
         if (sel[3]) Resume.clearParent(this)
-        if (sel[4]) Downloads.deleteAll(this)
+        if (sel[4]) clearParentDownloads()
         if (sel[5]) Recordings.deleteAll(this)
         toast("Cleared.")
+    }
+
+    private fun clearParentDownloads() {
+        Downloads.list(this)
+            .filterNot { Profiles.isKidDownload(this, it.id) }
+            .forEach { Downloads.delete(applicationContext, it.id) }
     }
 
     // ---- Subtitles ----
