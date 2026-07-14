@@ -176,7 +176,12 @@ Full-access kids can download from their own approved folders: on a movie's
 screen tap "📥 Download"; on a series screen LONG-PRESS an episode to grab just
 that one, or use "📥 Download this season" / "📥 Download whole show". Everything
 lands in the child's "Downloaded Movies & Shows", grouped as Series > Season >
-Episode.
+Episode. The child can see queued, downloading, paused and completed items there;
+downloads show percent/segment progress and become playable when complete.
+
+Parents can check the same child's download progress from Manage Kid Content >
+Approved Content > Downloads. The normal parent Downloads tab only shows the
+parent's own downloads.
 
 
 13. RECORDINGS

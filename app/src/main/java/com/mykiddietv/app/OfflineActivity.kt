@@ -13,8 +13,8 @@ import com.mykiddietv.app.databinding.ActivityKidmoviesBinding
 /**
  * Downloads browser, grouped Movies + Series → Season → Episode. Driven entirely by the
  * downloads list (so it starts empty and only ever shows real downloads).
- *  • Parent (kidMode=false): every download (any status); tap a leaf to play / pause / delete.
- *  • Kid   (kidMode=true):   completed downloads only; tap a leaf to play offline.
+ *  • Parent (kidMode=false): selected kid's downloads; tap a leaf to play / pause / delete.
+ *  • Kid   (kidMode=true):   selected kid's downloads with read-only progress; completed items play.
  * Episode grouping comes from the download title ("Series ⟫ Season ⟫ Episode") + source ("ep|s|s|e").
  */
 class OfflineActivity : AppCompatActivity(), Downloads.Listener {
@@ -58,9 +58,9 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
     override fun onDownloadsChanged() { runOnUiThread { loadEntries(); render() } }
 
     private fun loadEntries() {
-        // Only the KID bucket here — the parent's own downloads live in the Stalker Downloads screen.
-        val all = Downloads.list(this).filter { Profiles.isKidDownload(this, it.id) }.map { toEntry(it) }
-        entries = if (kidMode) all.filter { it.item.status == Downloads.DONE } else all
+        // Only the active kid's bucket here. Parent-owned downloads stay in the main Downloads screen.
+        val kidIds = Profiles.kidDownloadIds(this)
+        entries = Downloads.list(this).filter { kidIds.contains(it.id) }.map { toEntry(it) }
     }
 
     private fun delDownload(id: String) {
@@ -131,7 +131,9 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
 
     private fun leafRow(e: Entry): ChannelsActivity.Row {
         val name = if (e.isEpisode) e.episodeName else e.movieName
-        val label = if (kidMode) "🎬  $name" else "${statusPrefix(e.item)}  $name"
+        val prefix = if (kidMode && e.item.status == Downloads.DONE) "🎬" else statusPrefix(e.item)
+        val detail = statusDetail(e.item)
+        val label = "$prefix  $name" + if (detail.isBlank()) "" else "\n$detail"
         return ChannelsActivity.Row(label, e.item.poster, name) {
             if (kidMode) playOffline(e) else parentMenu(e)
         }
@@ -144,6 +146,33 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
         Downloads.QUEUED -> "…"
         Downloads.ERROR -> "⚠"
         else -> "•"
+    }
+
+    private fun statusDetail(it: Downloads.Item): String = when (it.status) {
+        Downloads.DONE -> if (it.hls) "Downloaded • offline ready"
+            else if (it.total > 0) "Downloaded • ${sizeStr(it.total)}" else ""
+        Downloads.DOWNLOADING -> {
+            val pct = if (it.total > 0) (it.done * 100 / it.total).toInt() else 0
+            when {
+                it.hls -> "Downloading $pct%  (${it.done} / ${it.total} segments)"
+                it.total > 0 -> "Downloading $pct%  (${sizeStr(it.done)} / ${sizeStr(it.total)})"
+                else -> "Downloading...  ${sizeStr(it.done)}"
+            }
+        }
+        Downloads.PAUSED -> {
+            val pct = if (it.total > 0) (it.done * 100 / it.total).toInt() else 0
+            val why = if (it.userPaused) "Paused" else "Paused - waiting for network"
+            why + if (it.total > 0) " • $pct%" else ""
+        }
+        Downloads.QUEUED -> "Waiting to download"
+        Downloads.ERROR -> "Download failed"
+        else -> ""
+    }
+
+    private fun sizeStr(bytes: Long): String {
+        if (bytes <= 0) return ""
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024) String.format("%.1f GB", mb / 1024) else String.format("%.0f MB", mb)
     }
 
     private fun parentMenu(e: Entry) {
@@ -169,7 +198,7 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
     }
 
     private fun playOffline(e: Entry) {
-        if (e.item.status != Downloads.DONE) { Toast.makeText(this, "Not downloaded yet.", Toast.LENGTH_SHORT).show(); return }
+        if (e.item.status != Downloads.DONE) { Toast.makeText(this, statusDetail(e.item).ifBlank { "Not downloaded yet." }, Toast.LENGTH_SHORT).show(); return }
         val f = Downloads.fileFor(this, e.item)
         if (!f.exists()) { delDownload(e.item.id); loadEntries(); render(); return }
         PlayerActivity.kidMode = kidMode
