@@ -160,12 +160,10 @@ class PlayerActivity : AppCompatActivity() {
         val p = buildPlayer()
         player = p
         b.playerView.player = p
-        // Subtitle to auto-attach: carried from the VLC engine (Switch player). Attached to the FIRST
-        // media item — the old "+800ms re-set" raced the initial buffering and silently lost the
-        // subtitle when switching engines on slow/4K streams.
-        // (Kid fork has no SubStore "saved subtitle per title" — only the carried subtitle applies.)
+        // Subtitle to auto-attach: carried from the VLC engine (Switch player) or saved for this title.
+        // Attached to the FIRST media item so initial buffering does not race a later media reset.
         val carrySub = intent.getStringExtra("subPath") ?: ""
-        val autoSub = (if (carrySub.isNotEmpty()) File(carrySub) else null)
+        val autoSub = (if (carrySub.isNotEmpty()) File(carrySub) else SubStore.saved(this, subKey()))
             ?.takeIf { it.exists() && !isLive }
         val firstItem = if (autoSub != null) {
             currentSubPath = autoSub.absolutePath
@@ -584,10 +582,13 @@ class PlayerActivity : AppCompatActivity() {
                     Toast.makeText(this, "Couldn't download that subtitle.", Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                applySubtitleFile(file, toast = true)
+                applySubtitleFile(SubStore.remember(this, subKey(), file), toast = true)
             }
         }
     }
+
+    /** Stable key for remembering a title's chosen subtitle across streamed and downloaded playback. */
+    private fun subKey() = resumeId.ifBlank { resumeSource }
 
     private fun srtConfig(file: File) = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
         .setMimeType(MimeTypes.APPLICATION_SUBRIP)
@@ -653,6 +654,7 @@ class PlayerActivity : AppCompatActivity() {
         resumeId = item.resumeId
         resumeSource = item.source
         resumePoster = item.poster
+        currentSubPath = ""
         forceSoftware = false
         linkRetried = false
         Toast.makeText(this, "▶  Next: ${item.title}", Toast.LENGTH_SHORT).show()
@@ -667,9 +669,18 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 videoUrl = url
                 val p = player ?: return@runOnUiThread
-                p.setMediaItem(MediaItem.fromUri(url))
+                val savedSub = SubStore.saved(this, subKey())?.takeIf { it.exists() }
+                val mediaItem = if (savedSub != null) {
+                    currentSubPath = savedSub.absolutePath
+                    MediaItem.Builder().setUri(url).setSubtitleConfigurations(listOf(srtConfig(savedSub))).build()
+                } else MediaItem.fromUri(url)
+                p.setMediaItem(mediaItem)
                 p.prepare()
                 p.playWhenReady = true
+                if (savedSub == null) p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                    .setPreferredTextLanguage("en")
+                    .setSelectUndeterminedTextLanguage(true)
+                    .build()
             }
         }
     }

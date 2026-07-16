@@ -177,7 +177,9 @@ screen tap "📥 Download"; on a series screen LONG-PRESS an episode to grab jus
 that one, or use "📥 Download this season" / "📥 Download whole show". Everything
 lands in the child's "Downloaded Movies & Shows", grouped as Series > Season >
 Episode. The child can see queued, downloading, paused and completed items there;
-downloads show percent/segment progress and become playable when complete.
+downloads show percent/segment progress and become playable when complete. New
+HLS downloads also keep available subtitle tracks for offline playback when the
+provider exposes them.
 
 Parents can check the same child's download progress from Manage Kid Content >
 Approved Content > Downloads. The normal parent Downloads tab only shows the
@@ -197,6 +199,9 @@ play or remove.
     (remembered for next time) and press Search. Each result shows its
     DOWNLOAD COUNT — higher usually means better quality/sync. Tap one to
     apply it; the chosen subtitle is remembered for that movie.
+  - If the remembered subtitle for a downloaded item is wrong, open Subtitles
+    and search again; the new pick replaces the saved subtitle for that title.
+    Deleting the downloaded title removes its saved subtitle too.
   - In the VLC player, the 💬 button on the top bar picks between the movie's
     built-in subtitle tracks, Off, or an online search. Movies with built-in
     English subtitles show them automatically — same as the Default player.

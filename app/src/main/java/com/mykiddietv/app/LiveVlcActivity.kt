@@ -185,6 +185,7 @@ class LiveVlcActivity : AppCompatActivity() {
             vodSpeed = intent.getFloatExtra("speed", 1f)
             movieYear = intent.getStringExtra("year") ?: ""
             vodSubPath = intent.getStringExtra("subPath") ?: ""
+            if (vodSubPath.isBlank()) SubStore.saved(this, subKey())?.let { vodSubPath = it.absolutePath }
             vodEpList = vodPlaylist; vodEpIndex = vodPlaylistIndex
             vodPlaylist = emptyList(); vodPlaylistIndex = -1
         }
@@ -572,6 +573,8 @@ class LiveVlcActivity : AppCompatActivity() {
         knownDurationMs = 0            // new episode: unknown length → fall back to VLC's own timeline
         seekTarget = -1L; startSeekTo = 0
         vodSubPath = ""               // a new episode has its own (or no) subtitle; speed persists
+        vodSubAttached = false
+        SubStore.saved(this, subKey())?.let { vodSubPath = it.absolutePath }
         stopSrtOverlay()
         android.widget.Toast.makeText(this, "▶  Next: ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
         io.execute {
@@ -834,6 +837,9 @@ class LiveVlcActivity : AppCompatActivity() {
 
     private fun searchQuery(): String = Subtitles.queryFor(titleText)
 
+    /** Stable key for remembering a title's chosen subtitle across streamed and downloaded playback. */
+    private fun subKey() = resumeId.ifBlank { resumeSource }
+
     private fun searchSubtitles() {
         Configs.ossKey(this).let { if (it.isNotBlank()) Subtitles.apiKey = it }
         val q = searchQuery()
@@ -851,9 +857,8 @@ class LiveVlcActivity : AppCompatActivity() {
                     android.widget.Toast.makeText(this, "Couldn't download that subtitle.", android.widget.Toast.LENGTH_SHORT).show()
                     return@runOnUiThread
                 }
-                // Save it in cache, then our own overlay renders it instantly — no stream reload needed.
-                // (Kid fork has no SubStore "saved subtitle per title" — the cached file is applied directly.)
-                vodSubPath = file.absolutePath
+                // Save it permanently, then our own overlay renders it instantly with no stream reload.
+                vodSubPath = SubStore.remember(this, subKey(), file).absolutePath
                 vodSubAttached = true
                 subUserOff = false
                 startSrtOverlay(java.io.File(vodSubPath))

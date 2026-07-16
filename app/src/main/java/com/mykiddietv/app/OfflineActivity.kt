@@ -202,9 +202,17 @@ class OfflineActivity : AppCompatActivity(), Downloads.Listener {
         val f = Downloads.fileFor(this, e.item)
         if (!f.exists()) { delDownload(e.item.id); loadEntries(); render(); return }
         PlayerActivity.kidMode = kidMode
+        val kidId = if (kidMode) Profiles.activeKidId(this) ?: "" else ""
+        val resume = if (kidMode) Resume.get(applicationContext, e.item.id, kidId) else Resume.get(applicationContext, e.item.id)
+        val title = if (e.isEpisode) "${e.seriesName} — ${e.episodeName}" else e.movieName
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra("url", Uri.fromFile(f).toString())
-            .putExtra("title", if (e.isEpisode) "${e.seriesName} — ${e.episodeName}" else e.movieName))
+            .putExtra("title", title)
+            .putExtra("resumeId", e.item.id)
+            .putExtra("resumeSource", e.item.source)
+            .putExtra("resumePoster", e.item.poster)
+            .putExtra("resumeStart", resume?.position ?: 0L)
+            .putExtra("year", resume?.year ?: ""))
     }
 
     override fun onBackPressed() {
